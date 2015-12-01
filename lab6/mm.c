@@ -248,6 +248,7 @@ void mm_free(void *ptr)
   }
   //coalese right
   if(ISFREE(*get_prev_size_ptr((*block_header)*next))){
+    size_t next_size = get_prev_size((*block_header)*next);
     
   }
 
