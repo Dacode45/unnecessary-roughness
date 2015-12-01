@@ -31,9 +31,9 @@ team_t team = {
     /* First member's WUSTL key */
     "ayekedavidr",
     /* Second member's full name (leave blank if none) */
-    "",
+    "Ben Stolovitz",
     /* Second member's WUSTL key (leave blank if none) */
-    ""
+    "bstolovitz"
 };
 
 /* single word (4) or double word (8) alignment */
@@ -44,26 +44,39 @@ team_t team = {
 
 #define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
 
-//Block Stuff
-/*Block
-void * next
-data
-size_t size
-*/
-typedef void * block_header;
-#define BLOCK_HEADER_SIZE ALIGN(sizeof(block_header))
-#define TOTAL_HEADER_SIZE BLOCK_HEADER_SIZE + SIZE_T_SIZE
+/**
+ * Block macros
+ *
+ * void * previous
+ * size_t size (union with 1 bit active)
+ * (allocated data)
+ */
 
-#define FREE (1<<sizeof(size_t)-1) //Free is last bit
-#define ISFREE(size) size & FREE
-#define GETSIZE(size) size & ~FREE
+typedef void * block_node;
+#define BLOCK_NODE_SIZE (ALIGN(sizeof(block_node)))
+#define VALID_SIZE (ALIGN(sizeof(unsigned char)))
+#define BLOCK_HEADER_SIZE BLOCK_NODE_SIZE + SIZE_T_SIZE
+
+#define GET_PREVIOUS_BLOCK(currentBlock) (block_node)*currentBlock
+#define GET_NEXT_BLOCK(currentBlock) (block_node)((char*)currentBlock + GET_SIZE(currentBlock))
+#define GET_HEADER(dataptr) ((block_node)((char*)dataptr - BLOCK_HEADER_SIZE))
+#define GET_DATA(blockptr) ((void*)((char*)blockptr + BLOCK_HEADER_SIZE))
+
+#define FREE_MASK (1<<(sizeof(size_t) - 1))
+#define GET_MASKED_SIZE(blockPointer) (*(size_t*)((char*)blockPointer + BLOCK_NODE_SIZE))
+#define IS_FREE(blockPointer) (GET_MASKED_SIZE(blockPointer) & FREE_MASK)
+#define GET_SIZE(blockPointer) (GET_MASKED_SIZE(blockPointer) & ~FREE_MASK)
+
+int macro_checker() {
+  
+}
 
 
-//Free list Stuff
-block_header* BASE=NULL;
-block_header* END = NULL;
-block_header * LAST_CHECK = NULL
-size_t LAST_CHECK_SIZE = 0
+// //Free list Stuff
+// block_header* BASE=NULL;
+// block_header* END = NULL;
+// block_header * LAST_CHECK = NULL
+// size_t LAST_CHECK_SIZE = 0
 
 /*
  * mm_init - initialize the malloc package.
@@ -79,145 +92,147 @@ int mm_init(void)
  *     Always allocate a block whose size is a multiple of the alignment.
  */
 
-//Cannot call with BASE
-inline block_header* get_prev(block_header* block){
-  size_t size = GETSIZE(*(size_t*)((char *)block -SIZE_T_SIZE))
-  assert((char *)block -SIZE_T_SIZE % 8 == 0) //check 8 byte allignment
-  prev = (block_header*)((char *)block - size - TOTAL_HEADER_SIZE);
-  assert(prev % 8 == 0) //check 8 byte allignment
-  return prev;
-}
-inline block_header* get_next(block_header* block){
-  block_header* next = *block;
-  assert(next & 8 == 0);
-  return next;
-}
+// //Cannot call with BASE
+// inline block_header* get_prev(block_header* block){
+//   size_t size = GETSIZE(*(size_t*)((char *)block -SIZE_T_SIZE))
+//   assert((char *)block -SIZE_T_SIZE % 8 == 0) //check 8 byte allignment
+//   prev = (block_header*)((char *)block - size - TOTAL_HEADER_SIZE);
+//   assert(prev % 8 == 0) //check 8 byte allignment
+//   return prev;
+// }
+// inline block_header* get_next(block_header* block){
+//   block_header* next = *block;
+//   assert(next & 8 == 0);
+//   return next;
+// }
 
-inline size_t* get_size_ptr(block_header* block){
-  block_header* next = *block;
-  size_t* size = (size_t*)((char *)block -SIZE_T_SIZE);
-  assert(size % 8 == 0) //check 8 byte allignment
-  return size;
-}
+// inline size_t* get_size_ptr(block_header* block){
+//   block_header* next = *block;
+//   size_t* size = (size_t*)((char *)block -SIZE_T_SIZE);
+//   assert(size % 8 == 0) //check 8 byte allignment
+//   return size;
+// }
 
-inline size_t get_prev_size(block_header* block){
-  size_t size = GETSIZE(*(size_t*)((char *)block -SIZE_T_SIZE));
-  assert((char *)block -SIZE_T_SIZE % 8 == 0) //check 8 byte allignment
-  return size;
-}
+// inline size_t get_prev_size(block_header* block){
+//   size_t size = GETSIZE(*(size_t*)((char *)block -SIZE_T_SIZE));
+//   assert((char *)block -SIZE_T_SIZE % 8 == 0) //check 8 byte allignment
+//   return size;
+// }
 
 
-inline size_t get_prev_size_ptr(block_header* block){
-  size_t size = (size_t*)((char *)block -SIZE_T_SIZE);
-  assert(size % 8 == 0) //check 8 byte allignment
-  return size;
-}
+// inline size_t get_prev_size_ptr(block_header* block){
+//   size_t size = (size_t*)((char *)block -SIZE_T_SIZE);
+//   assert(size % 8 == 0) //check 8 byte allignment
+//   return size;
+// }
 
-inline block_header* get_block_header(void *ptr){
-  return (block_header*)(ptr - BLOCK_HEADER_SIZE);
-}
+// inline block_header* get_block_header(void *ptr){
+//   return (block_header*)(ptr - BLOCK_HEADER_SIZE);
+// }
 
-inline void* get_data(block_header* block){
-  return (void*)((char*)block + BLOCK_HEADER_SIZE);
-}
+// inline void* get_data(block_header* block){
+//   return (void*)((char*)block + BLOCK_HEADER_SIZE);
+// }
 
-inline void set_next(block_header* block, block_header next){
-  *block = next;
-}
+// inline void set_next(block_header* block, block_header next){
+//   *block = next;
+// }
 
-//set free
-inline void set_free(block_header* block, int should_free){
-  if(should_free){
+// //set free
+// inline void set_free(block_header* block, int should_free){
+//   if(should_free){
 
-  }
-}
-//Go 1 past, and check the size of previous, best fit reduces fragmentation
-//TODO add implment split
-//ALWAYS SPLIT
-block_header find_free(size_t request_size){
-  block_header *last =NULL;
-  block_header *current = LAST_CHECK;
-  if(request_size < LAST_CHECK_SIZE && LAST_CHECK){
-    current = BASE;
-  }
-  do{
-    last = current;
-    current = *current;
-    assert(last == get_prev(current)); //Maintain inorder of list
-    last_size = get_prev_size(current);
-    if (last_size >= request_size && ISFREE(last_size)){
-      LAST_CHECK_SIZE = request_size;
-      LAST_CHECK = last;
-      return last;
-    }
-    return NULL;
-  }while(current); //End of list should be null
-}
+//   }
+// }
+// //Go 1 past, and check the size of previous, best fit reduces fragmentation
+// //TODO add implment split
+// //ALWAYS SPLIT
+// block_header find_free(size_t request_size){
+//   block_header *last =NULL;
+//   block_header *current = LAST_CHECK;
+//   if(request_size < LAST_CHECK_SIZE && LAST_CHECK){
+//     current = BASE;
+//   }
+//   do{
+//     last = current;
+//     current = *current;
+//     assert(last == get_prev(current)); //Maintain inorder of list
+//     last_size = get_prev_size(current);
+//     if (last_size >= request_size && ISFREE(last_size)){
+//       LAST_CHECK_SIZE = request_size;
+//       LAST_CHECK = last;
+//       return last;
+//     }
+//     return NULL;
+//   }while(current); //End of list should be null
+// }
 
-//TODO add end of heap footer
-//Always assume that if this function is called, block is at end of list
-block_header request_space(block_header last, size_t size){
-  block_header* block;
-  block = mem_sbrk(0);
-  size_t newsize = ALIGN(size);
-  void * request = sbrk(newsize + TOTAL_HEADER_SIZE);
-  if (request == (void *)-1)
-    return NULL;
-  assert(request % 8 == 0) //check 8 byte allignment
-  if(last){
-    set_next(last, block);
-  }
+// //TODO add end of heap footer
+// //Always assume that if this function is called, block is at end of list
+// block_header request_space(block_header last, size_t size){
+//   block_header* block;
+//   block = mem_sbrk(0);
+//   size_t newsize = ALIGN(size);
+//   void * request = sbrk(newsize + TOTAL_HEADER_SIZE);
+//   if (request == (void *)-1)
+//     return NULL;
+//   assert(request % 8 == 0) //check 8 byte allignment
+//   if(last){
+//     set_next(last, block);
+//   }
 
-  size = size | FREE
-  *((size_t *)((char*)block+newsize+BLOCK_HEADER_SIZE)) = newsize;//Sets the last word to size
-  assert(((char*)block+newsize+BLOCK_HEADER_SIZE) % 8 == 0); //check 8 byte allignment
+//   size = size | FREE
+//   *((size_t *)((char*)block+newsize+BLOCK_HEADER_SIZE)) = newsize;//Sets the last word to size
+//   assert(((char*)block+newsize+BLOCK_HEADER_SIZE) % 8 == 0); //check 8 byte allignment
 
-  set_next(block, NULL);
-  END = block;
-  return block;
-}
+//   set_next(block, NULL);
+//   END = block;
+//   return block;
+// }
 
 
 
 void *mm_malloc(size_t size)
 {
-  size = ALIGN(size);
-  block_header block;
-  if (size <= 0){
-    return NULL;
-  }
 
-  if (!BASE){
-    block = request_space(NULL, size);
-    if (!block){
-      return NULL;
-    }
-    BASE = block;
-  }else{
-    block_header *candidate = find_free(size);
-    if(!candidate){ //no candidate
-      //get space
-      candidate = request_space(END, size);
-      if (!candidate){
-        return NULL;
-      }
-    }else{
-      assert(candidate %8 == 0);
-      candidate_size = get_size_ptr(candidate);
-      *candidate_size = *candidate_size & ~FREE;
-    }
-  }
+  return NULL;
+  // size = ALIGN(size);
+  // block_header block;
+  // if (size <= 0){
+  //   return NULL;
+  // }
 
-  return (void *)((char *)candidate + BLOCK_HEADER_SIZE);
-  //old
-  //   int newsize = ALIGN(size + SIZE_T_SIZE);
-  //   void *p = mem_sbrk(newsize);
-  //   if (p == (void *)-1)
-	// return NULL;
-  //   else {
-  //       *(size_t *)p = size;
-  //       return (void *)((char *)p + SIZE_T_SIZE);
+  // if (!BASE){
+  //   block = request_space(NULL, size);
+  //   if (!block){
+  //     return NULL;
   //   }
+  //   BASE = block;
+  // }else{
+  //   block_header *candidate = find_free(size);
+  //   if(!candidate){ //no candidate
+  //     //get space
+  //     candidate = request_space(END, size);
+  //     if (!candidate){
+  //       return NULL;
+  //     }
+  //   }else{
+  //     assert(candidate %8 == 0);
+  //     candidate_size = get_size_ptr(candidate);
+  //     *candidate_size = *candidate_size & ~FREE;
+  //   }
+  // }
+
+  // return (void *)((char *)candidate + BLOCK_HEADER_SIZE);
+  //old
+ //    int newsize = ALIGN(size + SIZE_T_SIZE);
+ //    void *p = mem_sbrk(newsize);
+ //    if (p == (void *)-1)
+	// return NULL;
+ //    else {
+ //        *(size_t *)p = size;
+ //        return (void *)((char *)p + SIZE_T_SIZE);
+ //    }
 }
 
 /*
@@ -226,30 +241,30 @@ void *mm_malloc(size_t size)
  */
 void mm_free(void *ptr)
 {
-  //Check null pointer
-  if (!ptr){
-    return
-  }
-  //assume valid pointer
-  assert(ptr % 8 == 0) //check 8 byte allignment
-  //coalese first
-  block = get_block_header(ptr);
-  block_header* prev = get_prev(ptr);
-  block_header* next = *block;
-  size_t * block_size_ptr = get_prev_size_ptr(next);
-  size_t block_size = get_prev_size(next);
+  // //Check null pointer
+  // if (!ptr){
+  //   return
+  // }
+  // //assume valid pointer
+  // assert(ptr % 8 == 0) //check 8 byte allignment
+  // //coalese first
+  // block = get_block_header(ptr);
+  // block_header* prev = get_prev(ptr);
+  // block_header* next = *block;
+  // size_t * block_size_ptr = get_prev_size_ptr(next);
+  // size_t block_size = get_prev_size(next);
 
-  //coalese left
-  if(ISFREE(*get_prev_size_ptr(block))){
-    size_t prev_size = get_prev_size(block);
-    prev_size += block_size+TOTAL_HEADER_SIZE;
-    set_next(prev, next);
-    *block_size_ptr = prev_size | FREE;
-  }
-  //coalese right
-  if(ISFREE(*get_prev_size_ptr((*block_header)*next))){
+  // //coalese left
+  // if(ISFREE(*get_prev_size_ptr(block))){
+  //   size_t prev_size = get_prev_size(block);
+  //   prev_size += block_size+TOTAL_HEADER_SIZE;
+  //   set_next(prev, next);
+  //   *block_size_ptr = prev_size | FREE;
+  // }
+  // //coalese right
+  // if(ISFREE(*get_prev_size_ptr((*block_header)*next))){
     
-  }
+  // }
 
 }
 
