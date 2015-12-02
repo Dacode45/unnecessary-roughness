@@ -91,7 +91,7 @@ int FREE_CALLED = 0;
 float AVERAGE_REQUEST_SIZE = 0.0f;
 int NUM_REQUEST = 0;
 const int EARLY_POINTS = 16;
-const int STEP_SIZE = 1.0f / EARLY_POINTS;
+const float STEP_SIZE = 1.0f / EARLY_POINTS;
 void add_request(size_t size){
   float s = (float)size;
 
@@ -203,7 +203,7 @@ int mm_check(void)
 
   block_node current = BASE;
   block_node last = NULL;
-  while(current != NULL & last < END) {
+  while((current != NULL) && (last < END)) {
     printf("\tCHECKING: %p; SIZE: %#lx; FREE: %d; NEXT: %p; PREVIOUS: %p\n", current, GET_SIZE(current), !!IS_FREE(current), GET_NEXT_BLOCK(current), GET_PREVIOUS_BLOCK(current));
 
     // Check contiguity of free space (with previous)
