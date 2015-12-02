@@ -63,7 +63,7 @@ typedef void * block_node;
 #define GET_NEXT_BLOCK(currentBlock) (block_node)((char*)currentBlock + GET_SIZE(currentBlock))
 
 #define FREE_MASK (1<<(sizeof(size_t) - 1))
-#define GET_MASKED_SIZE_POINTER(blockPointer) ((size_t*)((char*)blockPointer + BLOCK_NODE_SIZE))
+#define GET_MASKED_SIZE_POINTER(blockPointer) ((size_t*)((char*)blockPointer + sizeof(block_node)))
 #define GET_MASKED_SIZE(blockPointer) (*GET_MASKED_SIZE_POINTER(blockPointer))
 #define IS_FREE(blockPointer) (GET_MASKED_SIZE(blockPointer) & FREE_MASK)
 #define GET_SIZE(blockPointer) (GET_MASKED_SIZE(blockPointer) & ~FREE_MASK)
@@ -71,13 +71,20 @@ typedef void * block_node;
 
 
 int macro_checker() {
-
   // verify block_header_size, should be 8 bytes
   // b/c sizeof(void*) = 4, sizeof(size_t) = 4
   // 4 + 4 = 8
   assert(sizeof(void*) == 4);
   assert(sizeof(size_t) == 4);
   assert(BLOCK_HEADER_SIZE == 8);
+
+  // verify header and data getters
+  // should be inverses
+  block_node testNode = malloc(GET_BLOCK_SIZE(8));
+  assert(GET_HEADER(GET_DATA(testNode)) == testNode);
+  // should move the right amount (ie BLOCK_HEADER_SIZE)
+  // because: o o o o o o o o
+  // assert(GET_DATA(testNode) == testNode + )
 
   // printf("block size: %lu\n", GET_BLOCK_SIZE(0));
   // printf("block size: %lu\n", GET_BLOCK_SIZE(4));
