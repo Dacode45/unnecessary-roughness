@@ -51,7 +51,6 @@ team_t team = {
  * size_t size (union with 1 bit active)
  * (allocated data)
  */
-
 typedef void * block_node;
 #define BLOCK_HEADER_SIZE ALIGN((sizeof(block_node) + sizeof(size_t)))
 
@@ -70,8 +69,22 @@ typedef void * block_node;
 #define GET_SIZE(blockPointer) (GET_MASKED_SIZE(blockPointer) & ~FREE_MASK)
 #define SET_SIZE(blockPointer, size) ((GET_MASKED_SIZE(blockPointer)) = size | IS_FREE(blockPointer))
 
+/**
+ * Bookkeeping
+ */
+block_node* BASE = NULL;
+block_node* END = NULL;
+block_node* LAST_CHECK = NULL;
+size_t LAST_CHECK_SIZE = 0;
 
-int macro_checker()
+int NUM_REQUEST = 0;
+int AVERAGE_REQUEST_SIZE = 0;
+#define ADD_REQUEST(size) (AVERAGE_REQUEST_SIZE += ALIGN(size)/(++NUM_REQUEST));
+
+/*
+ * returns non-zero if macros function properly
+ */
+int macro_checker() 
 {
   /**
    * BLOCK_HEADER_SIZE
@@ -152,18 +165,10 @@ int macro_checker()
   return 1;
 }
 
-
-// //Free list Stuff
-block_node BASE=NULL;
-block_node END = NULL;
-block_node LAST_CHECK = NULL;
-size_t LAST_CHECK_SIZE = 0;
-
-int NUM_REQUEST = 0;
-int AVERAGE_REQUEST_SIZE = 0;
-#define ADD_REQUEST(size) (AVERAGE_REQUEST_SIZE += ALIGN(size)/(++NUM_REQUEST));
-
-int mm_check(void)
+/*
+ * returns non-zero if macros function properly
+ */
+int mm_check(void) 
 {
   if(!macro_checker()) {
     return 0;
@@ -178,6 +183,7 @@ int mm_check(void)
  */
 int mm_init(void)
 {
+  // TODO remove call from final code.
   mm_check();
   return 0;
 }
