@@ -287,7 +287,7 @@ block_node request_space(block_node last, size_t size){
     return NULL;
   assert((int)request %ALIGNMENT == 0);
   if(last){
-    *(block_node*)block = &last;
+    SET_PREVIOUS_BLOCK(block, last);
   }
   size = ALIGN(size);
   SET_SIZE(block, size);
@@ -403,7 +403,7 @@ void mm_free(void *ptr)
     assert(GET_NEXT_BLOCK(prev) == block);
     SET_SIZE(prev, prev_size);
     if(block != END){
-      *(block_node*)next = prev;
+      SET_PREVIOUS_BLOCK(next, prev);
     }
     block = prev;
   }
