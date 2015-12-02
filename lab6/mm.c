@@ -204,7 +204,7 @@ int mm_check(void)
       has_failed = 1;
     }
 
-    sleep(1);
+    //sleep(1);
     last = current;
     current = GET_NEXT_BLOCK(current);
   }
@@ -247,16 +247,20 @@ int mm_init(void)
 block_node find_free(size_t request_size){
 printf("IN find_free\n" );
   request_size = ALIGN(request_size);
-  if(LAST_CHECK == NULL)
+  if(LAST_CHECK == NULL || LAST_CHECK == BASE)
     LAST_CHECK = END;
   block_node current = LAST_CHECK;
   if(request_size < LAST_CHECK_SIZE || FREE_CALLED){
     current = END;
   }
   FREE_CALLED = 0;
-  while(current && GET_SIZE(current) < request_size){
-    current = *(block_node *)current;
+  while(current != NULL || !IS_FREE(current) || GET_SIZE(current) < request_size){
+    if(current == BASE){
+      return NULL;
+    }
+    current = GET_PREVIOUS_BLOCK(current);
   }
+  printf("CURRENT: %p, FREE: %d\n",current, IS_FREE(current) );
 
   LAST_CHECK = current;
   LAST_CHECK_SIZE = request_size;
@@ -300,6 +304,7 @@ block_node request_space(block_node last, size_t size){
   SET_FREE(block, 1);
   assert((int)block % ALIGNMENT == 0);
   //*(block_node *)block = NULL; //next is null
+  printf("END: %p, BLOCK: %p\n",END, block );
   END = block;
   printf("END: %p\n", *(block_node*)END);
 
@@ -351,7 +356,7 @@ void *mm_malloc(size_t size)
     BASE = block;
   }else{
     block = find_free(size);
-    mm_check();
+    //mm_check();
     if(!block){
       printf("No FREE block");
       //get space
@@ -400,6 +405,7 @@ void mm_free(void *ptr)
   FREE_CALLED = 1;
 
   block_node block = GET_HEADER(ptr);
+  assert((int)block%8 == 0 );
   SET_FREE(block, 1);
 
   // block_node prev = NULL;
