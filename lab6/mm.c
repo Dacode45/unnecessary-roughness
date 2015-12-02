@@ -59,7 +59,7 @@ typedef void * block_node;
 #define GET_HEADER(dataptr) ((block_node)((char*)dataptr - BLOCK_HEADER_SIZE))
 #define GET_DATA(blockptr) ((void*)((char*)blockptr + BLOCK_HEADER_SIZE))
 
-#define GET_PREVIOUS_BLOCK(currentBlock) (block_node)*currentBlock
+#define GET_PREVIOUS_BLOCK(currentBlock) *(block_node*)currentBlock
 #define GET_NEXT_BLOCK(currentBlock) (block_node)((char*)currentBlock + GET_SIZE(currentBlock))
 
 #define FREE_MASK (1<<(sizeof(size_t)*8 - 1))
@@ -87,7 +87,8 @@ int macro_checker()
    * Header & Data getters
    */
   // should be inverses
-  block_node testNode = malloc(GET_BLOCK_SIZE(8));
+   const size_t testNodeSize = 8;
+  block_node testNode = malloc(GET_BLOCK_SIZE(testNodeSize));
   assert(GET_HEADER(GET_DATA(testNode)) == testNode);
   // should move the right amount (ie BLOCK_HEADER_SIZE)
   // because: o o o o|o o o o w/ header_size = 4
@@ -95,11 +96,6 @@ int macro_checker()
   // should:  o o o o|o o o o
   //                 ^
   assert(GET_DATA(testNode) == testNode + BLOCK_HEADER_SIZE);
-
-  /**
-   * Block traversal
-   */
-  // TODO that's hard
 
   /**
    * Size and Free
@@ -143,6 +139,16 @@ int macro_checker()
   SET_FREE(testNode, 0);
   assert(GET_SIZE(testNode) == yetAnotherTestSize);
 
+  /**
+   * Block traversal
+   */
+  // set up some dummy values (previous ptr and size)
+  *(block_node*)testNode = (block_node)0xbee71e5;
+  SET_SIZE(testNode, ALIGN(testNodeSize));
+  // should properly find the next and previous blocks
+  assert(GET_NEXT_BLOCK(testNode) == (char*)testNode + ALIGN(testNodeSize));
+  assert(GET_PREVIOUS_BLOCK(testNode) == (block_node)0xbee71e5);
+
   return 1;
 }
 
@@ -158,7 +164,7 @@ int mm_check(void)
   if(!macro_checker()) {
     return 0;
   }
-  
+
   return 1;
 }
 
