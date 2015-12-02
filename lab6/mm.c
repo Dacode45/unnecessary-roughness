@@ -62,35 +62,88 @@ typedef void * block_node;
 #define GET_PREVIOUS_BLOCK(currentBlock) (block_node)*currentBlock
 #define GET_NEXT_BLOCK(currentBlock) (block_node)((char*)currentBlock + GET_SIZE(currentBlock))
 
-#define FREE_MASK (1<<(sizeof(size_t) - 1))
+#define FREE_MASK (1<<(sizeof(size_t)*8 - 1))
 #define GET_MASKED_SIZE_POINTER(blockPointer) ((size_t*)((char*)blockPointer + sizeof(block_node)))
 #define GET_MASKED_SIZE(blockPointer) (*GET_MASKED_SIZE_POINTER(blockPointer))
 #define IS_FREE(blockPointer) (GET_MASKED_SIZE(blockPointer) & FREE_MASK)
+#define SET_FREE(blockPointer, free) (GET_MASKED_SIZE(blockPointer) = !!(free) << (sizeof(size_t)*8 - 1) | (GET_MASKED_SIZE(blockPointer) << 1 >> 1))
 #define GET_SIZE(blockPointer) (GET_MASKED_SIZE(blockPointer) & ~FREE_MASK)
-#define SET_SIZE(blockPointer, size) ((GET_MASKED_SIZE(blockPointer)) = size)
+#define SET_SIZE(blockPointer, size) ((GET_MASKED_SIZE(blockPointer)) = size | IS_FREE(blockPointer))
 
 
-int macro_checker() {
-  // verify block_header_size, should be 8 bytes
+int macro_checker()
+{
+  /**
+   * BLOCK_HEADER_SIZE
+   */
+  // should be 8 bytes
   // b/c sizeof(void*) = 4, sizeof(size_t) = 4
   // 4 + 4 = 8
   assert(sizeof(void*) == 4);
   assert(sizeof(size_t) == 4);
   assert(BLOCK_HEADER_SIZE == 8);
 
-  // verify header and data getters
+  /**
+   * Header & Data getters
+   */
   // should be inverses
   block_node testNode = malloc(GET_BLOCK_SIZE(8));
   assert(GET_HEADER(GET_DATA(testNode)) == testNode);
   // should move the right amount (ie BLOCK_HEADER_SIZE)
-  // because: o o o o o o o o
-  // assert(GET_DATA(testNode) == testNode + )
+  // because: o o o o|o o o o w/ header_size = 4
+  //         ^
+  // should:  o o o o|o o o o
+  //                 ^
+  assert(GET_DATA(testNode) == testNode + BLOCK_HEADER_SIZE);
 
-  // printf("block size: %lu\n", GET_BLOCK_SIZE(0));
-  // printf("block size: %lu\n", GET_BLOCK_SIZE(4));
-  // printf("block size: %lu\n", GET_BLOCK_SIZE(8));
-  // printf("block size: %lu\n", GET_BLOCK_SIZE(300));
-  return 0;
+  /**
+   * Block traversal
+   */
+  // TODO that's hard
+
+  /**
+   * Size and Free
+   */
+  // should accurately read a free set
+  GET_MASKED_SIZE(testNode) = 1 << (sizeof(size_t)*8 - 1);
+  assert(IS_FREE(testNode));
+  assert(GET_SIZE(testNode) == 0);
+  // should accurately read free set even if size is still set
+  GET_MASKED_SIZE(testNode) = ~0;
+  assert(IS_FREE(testNode));
+  // should accurately read a non-free set
+  GET_MASKED_SIZE(testNode) = GET_MASKED_SIZE(testNode) >> 1;
+  assert(!IS_FREE(testNode));
+  assert(GET_SIZE(testNode) == ~(1 << (sizeof(size_t)*8 - 1)));
+
+  // should accurately write frees
+  SET_FREE(testNode, 1);
+  assert(IS_FREE(testNode));
+  SET_FREE(testNode, 0);
+  assert(!IS_FREE(testNode));
+  // should accurately write frees even if not 1 or 0
+  SET_FREE(testNode, 1505);
+  assert(IS_FREE(testNode));
+
+  // should accurately write sizes
+  const size_t testSize = 5244;
+  SET_SIZE(testNode, testSize);
+  assert(GET_SIZE(testNode) == testSize);
+
+  // should NOT overwrite size or free on writes to other
+  SET_FREE(testNode, 0);
+  const size_t anotherTestSize = 12;
+  SET_SIZE(testNode, anotherTestSize);
+  assert(!IS_FREE(testNode));
+  SET_FREE(testNode, 1);
+  assert(GET_SIZE(testNode) == anotherTestSize);
+  const size_t yetAnotherTestSize = 8900444;
+  SET_SIZE(testNode, yetAnotherTestSize);
+  assert(IS_FREE(testNode));
+  SET_FREE(testNode, 0);
+  assert(GET_SIZE(testNode) == yetAnotherTestSize);
+
+  return 1;
 }
 
 
@@ -103,14 +156,23 @@ size_t LAST_CHECK_SIZE = 0;
 int NUM_REQUEST = 0;
 int AVERAGE_REQUEST_SIZE = 0;
 #define ADD_REQUEST(size) (AVERAGE_REQUEST_SIZE += ALIGN(size)/(++NUM_REQUEST));
+
+int mm_check(void)
+{
+  if(!macro_checker()) {
+    return 0;
+  }
+
+  return 1;
+}
+
 /*
  * mm_init - initialize the malloc package.
  TODO check for multiple calls
  */
 int mm_init(void)
 {
-  macro_checker();
-
+  mm_check();
   return 0;
 }
 
@@ -119,58 +181,7 @@ int mm_init(void)
  *     Always allocate a block whose size is a multiple of the alignment.
  */
 
-// //Cannot call with BASE
-// inline block_header* get_prev(block_header* block){
-//   size_t size = GETSIZE(*(size_t*)((char *)block -SIZE_T_SIZE))
-//   assert((char *)block -SIZE_T_SIZE % 8 == 0) //check 8 byte allignment
-//   prev = (block_header*)((char *)block - size - TOTAL_HEADER_SIZE);
-//   assert(prev % 8 == 0) //check 8 byte allignment
-//   return prev;
-// }
-// inline block_header* get_next(block_header* block){
-//   block_header* next = *block;
-//   assert(next & 8 == 0);
-//   return next;
-// }
 
-// inline size_t* get_size_ptr(block_header* block){
-//   block_header* next = *block;
-//   size_t* size = (size_t*)((char *)block -SIZE_T_SIZE);
-//   assert(size % 8 == 0) //check 8 byte allignment
-//   return size;
-// }
-
-// inline size_t get_prev_size(block_header* block){
-//   size_t size = GETSIZE(*(size_t*)((char *)block -SIZE_T_SIZE));
-//   assert((char *)block -SIZE_T_SIZE % 8 == 0) //check 8 byte allignment
-//   return size;
-// }
-
-
-// inline size_t get_prev_size_ptr(block_header* block){
-//   size_t size = (size_t*)((char *)block -SIZE_T_SIZE);
-//   assert(size % 8 == 0) //check 8 byte allignment
-//   return size;
-// }
-
-// inline block_header* get_block_header(void *ptr){
-//   return (block_header*)(ptr - BLOCK_HEADER_SIZE);
-// }
-
-// inline void* get_data(block_header* block){
-//   return (void*)((char*)block + BLOCK_HEADER_SIZE);
-// }
-
-// inline void set_next(block_header* block, block_header next){
-//   *block = next;
-// }
-
-// //set free
-// inline void set_free(block_header* block, int should_free){
-//   if(should_free){
-
-//   }
-// }
 // //Go 1 past, and check the size of previous, best fit reduces fragmentation
 // //TODO add implment split
 // //ALWAYS SPLIT
@@ -180,8 +191,8 @@ block_node find_free(size_t request_size){
   if(request_size < LAST_CHECK_SIZE){
     current = END;
   }
-  while(current && GET_BLOCK_SIZE(current) < request_size){
-    current = *current;
+  while(current && GET_SIZE(current) < request_size){
+    current = *(block_node *)current;
   }
   if(current == NULL)
     return current;
@@ -225,7 +236,7 @@ block_node request_space(block_node* last, size_t size){
   size = ALIGN(size) | FREE_MASK;
   SET_SIZE(block, size);
   assert((int)block % ALIGNMENT == 0);
-  *block = NULL; //next is null
+  *(block_node *)block = NULL; //next is null
   END = block;
   return block;
 }
@@ -239,7 +250,6 @@ block_node request_space(block_node* last, size_t size){
 //   assert(request % 8 == 0) //check 8 byte allignment
 //   if(last){
 //     set_next(last, block);
-
 
 //   size = size | FREE
 //   *((size_t *)((char*)block+newsize+BLOCK_HEADER_SIZE)) = newsize;//Sets the last word to size
