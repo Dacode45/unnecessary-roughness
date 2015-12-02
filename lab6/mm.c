@@ -87,14 +87,22 @@ size_t LAST_CHECK_SIZE = 0;
 // Flags
 int FREE_CALLED = 0;
 
-//Jeff McClintock running median eistimate
-int AVERAGE_REQUEST_SIZE = 0.0f;
+// Jeff McClintock running median eistimate
+float AVERAGE_REQUEST_SIZE = 0.0f;
 int NUM_REQUEST = 0;
-void add_request(size){
-  if(abs(size - AVERAGE_REQUEST_SIZE) > AVERAGE_REQUEST_SIZE){//Reset
+const int EARLY_POINTS = 16;
+const int STEP_SIZE = 1.0f / EARLY_POINTS;
+void add_request(size_t size){
+  float s = (float)size;
+
+  // Since this takes time to converge, higher step size on early pts.
+  if(abs(s - AVERAGE_REQUEST_SIZE) > AVERAGE_REQUEST_SIZE) {
     NUM_REQUEST = 0;
   }
-  AVERAGE_REQUEST_SIZE += (size - AVERAGE_REQUEST_SIZE) * 1/(++NUM_REQUEST%15);
+  float step = (NUM_REQUEST < EARLY_POINTS) ? 1.0f / ((++NUM_REQUEST) % EARLY_POINTS) : STEP_SIZE;
+
+  AVERAGE_REQUEST_SIZE += (s - AVERAGE_REQUEST_SIZE) * step;
+
   // printf("\tIN add_request, size: %d, average: %d, number: %d\n", size, AVERAGE_REQUEST_SIZE, NUM_REQUEST );
 }
 
@@ -258,11 +266,6 @@ int mm_init(void)
   return 0;
 }
 
-/*
- * mm_malloc - Allocate a block by incrementing the brk pointer.
- *     Always allocate a block whose size is a multiple of the alignment.
- */
-
 //Go 1 past, and check the size of previous, best fit reduces fragmentation
 //TODO add implment split
 //ALWAYS SPLIT
@@ -358,45 +361,50 @@ block_node split_block(block_node block, size_t cutoff){
   return block;
 }
 
+/*
+ * mm_malloc - Allocate a block by incrementing the brk pointer.
+ *     Always allocate a block whose size is a multiple of the alignment.
+ */
 void *mm_malloc(size_t size)
 {
   // printf("IN mm_malloc, SIZE = %#lx\n", size );
 
-  block_node block;
-  if (size <= 0){
+  if (size <= 0) {
     return NULL;
   }
-  add_request(size);
-  if (!BASE){
-    //Frist call
-    block = request_space(NULL, size);
-    if(!block){
-      return NULL;
-    }
-    SET_FREE(block, 0);
-    BASE = block;
-  }else{
-    block = find_free(size);
-    //mm_check();
-    if(!block){
-      //// printf("No FREE block\n");
-      //get space
-      block = request_space(END, size);
-      if(!block){
-        return NULL;
-      }
-      SET_FREE(block, 0);
 
-    }else{
-      //// printf("FREE BLOCK");
-      assert((int)block % ALIGNMENT == 0);
-      //check split
-      if(GET_SIZE(block) > GET_BLOCK_SIZE(size) + GET_BLOCK_SIZE((int)AVERAGE_REQUEST_SIZE)){
-        // printf("\tsplitting FREE Block, MARGIN: %lu, running average: %#x \n", GET_SIZE(block)- GET_BLOCK_SIZE(size), AVERAGE_REQUEST_SIZE);
-        block = split_block(block, size);
-      }
-      SET_FREE(block, 0);
+  // Bookkeep average requests
+  add_request(size);
+
+  block_node block = NULL;
+
+  // If first call, don't bother checking for free block.
+  if(BASE) {
+    block = find_free(size);
+  }
+
+  // If no free block, request space.
+  // Otherwise, split the block if necessary.
+  if(!block) {
+    block = request_space(END, size);
+  } else {
+    assert((int)block % ALIGNMENT == 0);
+
+    if(GET_SIZE(block) > GET_BLOCK_SIZE(size) + GET_BLOCK_SIZE((int)AVERAGE_REQUEST_SIZE)) {
+      // printf("\tsplitting FREE Block, MARGIN: %lu, running average: %f \n", GET_SIZE(block)- GET_BLOCK_SIZE(size), AVERAGE_REQUEST_SIZE);
+      block = split_block(block, size);
     }
+  }
+
+  if(!block) {
+    printf("ERROR! Could not allocate :(");
+    return NULL;
+  }
+
+  SET_FREE(block, 0);
+
+  if(!BASE) {
+    BASE = block;
   }
 
   // printf("\tBLOCK: %p, IS MALLOC\n",block);
@@ -405,7 +413,7 @@ void *mm_malloc(size_t size)
     mm_check();
   #endif
   #endif
-    
+
   return GET_DATA(block);
 }
 
