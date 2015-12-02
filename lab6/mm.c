@@ -159,9 +159,17 @@ block_node END = NULL;
 block_node LAST_CHECK = NULL;
 size_t LAST_CHECK_SIZE = 0;
 
-int NUM_REQUEST = 0;
-int AVERAGE_REQUEST_SIZE = 0;
+//Jeff McClintock running median eistimate
+float AVERAGE_REQUEST_SIZE = 0.0f;
+float MEDIAN_REQUEST_SIZE = 0.0f;
+inline void ADD_REQUEST(size){
+  average += (size -average) * 0.1f;
+  median += copysign(average * .01, sample - median);
+}
 #define ADD_REQUEST(size) (AVERAGE_REQUEST_SIZE += ALIGN(size)/(++NUM_REQUEST));
+
+//FLAGS
+int FREE_CALLED = 0;
 
 int mm_check(void)
 {
@@ -194,9 +202,10 @@ int mm_init(void)
 block_node find_free(size_t request_size){
   request_size = ALIGN(request_size);
   block_node current = LAST_CHECK;
-  if(request_size < LAST_CHECK_SIZE){
+  if(request_size < LAST_CHECK_SIZE || FREE_CALLED){
     current = END;
   }
+  FREE_CALLED = 0;
   while(current && GET_SIZE(current) < request_size){
     current = *(block_node *)current;
   }
@@ -266,6 +275,9 @@ block_node request_space(block_node* last, size_t size){
 //   return block;
 // }
 
+block_node split_block(block_node block, size_t cutoff){
+  cutoff = ALIGN(cutoff);
+}
 
 void *mm_malloc(size_t size)
 {
@@ -288,6 +300,10 @@ void *mm_malloc(size_t size)
       block = request_space(END, size);
       if(!block){
         return NULL;
+      }
+      //check split
+      if(GET_SIZE(block) > GET_BLOCK_SIZE(size) + GET_BLOCK_SIZE(MEDIAN_REQUEST_SIZE)){
+        block = split_block(block, size);
       }
     }else{
       assert((int)block % ALIGNMENT == 0);
@@ -319,6 +335,7 @@ void mm_free(void *ptr)
   if(!ptr || ((int)ptr%ALIGNMENT != 0)){
     return;
   }
+  FREE_CALLED = 1;
 
   block_node block = GET_HEADER(ptr);
   block_node prev = GET_PREVIOUS_BLOCK(block);
