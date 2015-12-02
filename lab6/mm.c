@@ -241,7 +241,10 @@ int mm_init(void)
 // //TODO add implment split
 // //ALWAYS SPLIT
 block_node find_free(size_t request_size){
+printf("IN find_free\n" );
   request_size = ALIGN(request_size);
+  if(LAST_CHECK == NULL)
+    LAST_CHECK = END;
   block_node current = LAST_CHECK;
   if(request_size < LAST_CHECK_SIZE || FREE_CALLED){
     current = END;
@@ -250,8 +253,6 @@ block_node find_free(size_t request_size){
   while(current && GET_SIZE(current) < request_size){
     current = *(block_node *)current;
   }
-  if(current == NULL)
-    return current;
 
   LAST_CHECK = current;
   LAST_CHECK_SIZE = request_size;
@@ -280,6 +281,7 @@ block_node find_free(size_t request_size){
 // //TODO add end of heap footer
 // //Always assume that if this function is called, block is at end of list
 block_node request_space(block_node last, size_t size){
+  printf("IN request_space\n" );
   block_node block;
   block = mem_sbrk(0);
   void * request = mem_sbrk(GET_BLOCK_SIZE(size));
@@ -320,12 +322,16 @@ block_node request_space(block_node last, size_t size){
 // }
 
 block_node split_block(block_node block, size_t cutoff){
+  printf("IN split_block\n" );
+
   cutoff = ALIGN(cutoff);
   return block;
 }
 
 void *mm_malloc(size_t size)
 {
+  printf("IN mm_malloc\n" );
+
   block_node block;
   if (size <= 0){
     return NULL;
@@ -341,7 +347,9 @@ void *mm_malloc(size_t size)
     BASE = block;
   }else{
     block = find_free(size);
+    mm_check();
     if(!block){
+      printf("No FREE block");
       //get space
       block = request_space(END, size);
       if(!block){
@@ -355,7 +363,7 @@ void *mm_malloc(size_t size)
       if(GET_SIZE(block) > GET_BLOCK_SIZE(size) + GET_BLOCK_SIZE((int)MEDIAN_REQUEST_SIZE)){
         block = split_block(block, size);
       }
-      SET_SIZE(block, ALIGN(size));
+      SET_FREE(block, 0);
     }
   }
 
@@ -381,6 +389,8 @@ void *mm_malloc(size_t size)
  */
 void mm_free(void *ptr)
 {
+  printf("IN mm_free\n" );
+
   if(!ptr || ((int)ptr%ALIGNMENT != 0)){
     return;
   }
@@ -389,29 +399,29 @@ void mm_free(void *ptr)
   block_node block = GET_HEADER(ptr);
   SET_FREE(block, 1);
 
-  block_node prev = NULL;
-  if(block != BASE)
-    prev = GET_PREVIOUS_BLOCK(block);
-
-  block_node next= NULL;
-  if(block != END)
-    next = GET_NEXT_BLOCK(block);
-
-  if(block != BASE && prev && IS_FREE(prev)){
-    size_t prev_size = GET_SIZE(prev);
-    prev_size += GET_SIZE(block) + BLOCK_HEADER_SIZE;
-    assert(GET_NEXT_BLOCK(prev) == block);
-    SET_SIZE(prev, prev_size);
-    if(block != END){
-      SET_PREVIOUS_BLOCK(next, prev);
-    }
-    block = prev;
-  }
-  if(block != END && next && IS_FREE(next)){
-    size_t block_size = GET_SIZE(block);
-    block_size += GET_SIZE(next) + BLOCK_HEADER_SIZE;
-    SET_SIZE(block, block_size );
-  }
+  // block_node prev = NULL;
+  // if(block != BASE)
+  //   prev = GET_PREVIOUS_BLOCK(block);
+  //
+  // block_node next= NULL;
+  // if(block != END)
+  //   next = GET_NEXT_BLOCK(block);
+  //
+  // if(block != BASE && prev && IS_FREE(prev)){
+  //   size_t prev_size = GET_SIZE(prev);
+  //   prev_size += GET_SIZE(block) + BLOCK_HEADER_SIZE;
+  //   assert(GET_NEXT_BLOCK(prev) == block);
+  //   SET_SIZE(prev, prev_size);
+  //   if(block != END){
+  //     SET_PREVIOUS_BLOCK(next, prev);
+  //   }
+  //   block = prev;
+  // }
+  // if(block != END && next && IS_FREE(next)){
+  //   size_t block_size = GET_SIZE(block);
+  //   block_size += GET_SIZE(next) + BLOCK_HEADER_SIZE;
+  //   SET_SIZE(block, block_size );
+  // }
 
   mm_check();
 
@@ -447,6 +457,8 @@ void mm_free(void *ptr)
  */
 void *mm_realloc(void *ptr, size_t size)
 {
+  printf("IN mm_realloc\n" );
+
     void *oldptr = ptr;
     void *newptr;
     size_t copySize;
