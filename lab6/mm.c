@@ -51,7 +51,6 @@ team_t team = {
  * size_t size (union with 1 bit active)
  * (allocated data)
  */
-
 typedef void * block_node;
 #define BLOCK_HEADER_SIZE ALIGN((sizeof(block_node) + sizeof(size_t)))
 
@@ -70,7 +69,27 @@ typedef void * block_node;
 #define GET_SIZE(blockPointer) (GET_MASKED_SIZE(blockPointer) & ~FREE_MASK)
 #define SET_SIZE(blockPointer, size) ((GET_MASKED_SIZE(blockPointer)) = size | IS_FREE(blockPointer))
 
+/**
+ * Bookkeeping
+ */
+block_node* BASE = NULL;
+block_node* END = NULL;
+block_node* LAST_CHECK = NULL;
+size_t LAST_CHECK_SIZE = 0;
 
+//Jeff McClintock running median eistimate
+float AVERAGE_REQUEST_SIZE = 0.0f;
+float MEDIAN_REQUEST_SIZE = 0.0f;
+inline void ADD_REQUEST(size){
+  AVERAGE_REQUEST_SIZE += (size -AVERAGE_REQUEST_SIZE) * 0.1f;
+  MEDIAN_REQUEST_SIZE += copysign(AVERAGE_REQUEST_SIZE * .01, size - MEDIAN_REQUEST_SIZE);
+}
+//FLAGS
+int FREE_CALLED = 0;
+
+/*
+ * returns non-zero if macros function properly
+ */
 int macro_checker()
 {
   /**
@@ -152,27 +171,7 @@ int macro_checker()
   return 1;
 }
 
-
-// //Free list Stuff
-block_node BASE=NULL;
-block_node END = NULL;
-block_node LAST_CHECK = NULL;
-size_t LAST_CHECK_SIZE = 0;
-
-//Jeff McClintock running median eistimate
-float AVERAGE_REQUEST_SIZE = 0.0f;
-float MEDIAN_REQUEST_SIZE = 0.0f;
-inline void ADD_REQUEST(size){
-  average += (size -average) * 0.1f;
-  median += copysign(average * .01, sample - median);
-}
-#define ADD_REQUEST(size) (AVERAGE_REQUEST_SIZE += ALIGN(size)/(++NUM_REQUEST));
-
-//FLAGS
-int FREE_CALLED = 0;
-
-int mm_check(void)
-{
+int mm_check(void){
   if(!macro_checker()) {
     return 0;
   }
@@ -186,6 +185,7 @@ int mm_check(void)
  */
 int mm_init(void)
 {
+  // TODO remove call from final code.
   mm_check();
   return 0;
 }
@@ -277,6 +277,7 @@ block_node request_space(block_node* last, size_t size){
 
 block_node split_block(block_node block, size_t cutoff){
   cutoff = ALIGN(cutoff);
+  return block;
 }
 
 void *mm_malloc(size_t size)
@@ -285,7 +286,7 @@ void *mm_malloc(size_t size)
   if (size <= 0){
     return NULL;
   }
-  ADD_REQUEST(size)
+  ADD_REQUEST(size);
   if (!BASE){
     //Frist call
     block = request_space(NULL, size);
@@ -302,7 +303,7 @@ void *mm_malloc(size_t size)
         return NULL;
       }
       //check split
-      if(GET_SIZE(block) > GET_BLOCK_SIZE(size) + GET_BLOCK_SIZE(MEDIAN_REQUEST_SIZE)){
+      if(GET_SIZE(block) > GET_BLOCK_SIZE(size) + GET_BLOCK_SIZE((int)MEDIAN_REQUEST_SIZE)){
         block = split_block(block, size);
       }
     }else{
@@ -338,11 +339,13 @@ void mm_free(void *ptr)
   FREE_CALLED = 1;
 
   block_node block = GET_HEADER(ptr);
-  block_node prev = GET_PREVIOUS_BLOCK(block);
-  block_node next;
+  block_node prev = NULL;
+  if(block != BASE)
+    prev = GET_PREVIOUS_BLOCK(block);
+  block_node next= NULL;
   if(block != END)
     next = GET_NEXT_BLOCK(block);
-  if(IS_FREE(prev)){
+  if(block != BASE && prev && IS_FREE(prev)){
     size_t prev_size = GET_SIZE(prev);
     prev_size += GET_SIZE(block) + BLOCK_HEADER_SIZE;
     assert(GET_NEXT_BLOCK(prev) == block);
@@ -352,7 +355,7 @@ void mm_free(void *ptr)
     }
     block = prev;
   }
-  if(block != END && IS_FREE(next)){
+  if(block != END && next && IS_FREE(next)){
     size_t block_size = GET_SIZE(block);
     block_size += GET_SIZE(next) + BLOCK_HEADER_SIZE;
     SET_SIZE(block, block_size | FREE_MASK);
