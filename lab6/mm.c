@@ -162,6 +162,8 @@ int macro_checker()
   assert(GET_NEXT_BLOCK(testNode) == (char*)testNode + ALIGN(testNodeSize));
   assert(GET_PREVIOUS_BLOCK(testNode) == (block_node)0xbee71e5);
 
+  printf("Macros checked successfully!\n");
+
   return 1;
 }
 
@@ -170,10 +172,6 @@ int macro_checker()
  */
 int mm_check(void) 
 {
-  if(!macro_checker()) {
-    return 0;
-  }
-
   return 1;
 }
 
@@ -184,7 +182,10 @@ int mm_check(void)
 int mm_init(void)
 {
   // TODO remove call from final code.
-  mm_check();
+  if(!macro_checker()) {
+    return 0;
+  }
+
   return 0;
 }
 
@@ -302,6 +303,8 @@ void *mm_malloc(size_t size)
     }
   }
 
+  mm_check();
+
   return GET_DATA(block);
 
   // return (void *)((char *)candidate + BLOCK_HEADER_SIZE);
@@ -346,6 +349,9 @@ void mm_free(void *ptr)
     block_size += GET_SIZE(next) + BLOCK_HEADER_SIZE;
     SET_SIZE(block, block_size | FREE_MASK);
   }
+
+  mm_check();
+  
   // //Check null pointer
   // if (!ptr){
   //   return
