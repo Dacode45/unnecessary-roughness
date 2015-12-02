@@ -62,7 +62,7 @@ typedef void * block_node;
 #define GET_PREVIOUS_BLOCK(currentBlock) (block_node)*currentBlock
 #define GET_NEXT_BLOCK(currentBlock) (block_node)((char*)currentBlock + GET_SIZE(currentBlock))
 
-#define FREE_MASK (1<<(sizeof(size_t) - 1))
+#define FREE_MASK (1<<(sizeof(size_t)*8 - 1))
 #define GET_MASKED_SIZE_POINTER(blockPointer) ((size_t*)((char*)blockPointer + sizeof(block_node)))
 #define GET_MASKED_SIZE(blockPointer) (*GET_MASKED_SIZE_POINTER(blockPointer))
 #define IS_FREE(blockPointer) (GET_MASKED_SIZE(blockPointer) & FREE_MASK)
@@ -83,8 +83,21 @@ int macro_checker() {
   block_node testNode = malloc(GET_BLOCK_SIZE(8));
   assert(GET_HEADER(GET_DATA(testNode)) == testNode);
   // should move the right amount (ie BLOCK_HEADER_SIZE)
-  // because: o o o o o o o o
-  // assert(GET_DATA(testNode) == testNode + )
+  // because: o o o o|o o o o w/ header_size = 4
+  //         ^ 
+  // should:  o o o o|o o o o
+  //                 ^
+  assert(GET_DATA(testNode) == testNode + BLOCK_HEADER_SIZE);
+
+  // verify block traversal
+  // TODO that's hard
+
+  // verify size & free access
+  // should accurately read free or not
+  GET_MASKED_SIZE(testNode) = 1 << (sizeof(size_t)*8 - 1);
+  assert(IS_FREE(testNode));
+  GET_MASKED_SIZE(testNode) = ~(GET_MASKED_SIZE(testNode));
+  assert(!IS_FREE(testNode));
 
   // printf("block size: %lu\n", GET_BLOCK_SIZE(0));
   // printf("block size: %lu\n", GET_BLOCK_SIZE(4));
@@ -221,7 +234,6 @@ block_node request_space(block_node* last, size_t size){
 //   assert(request % 8 == 0) //check 8 byte allignment
 //   if(last){
 //     set_next(last, block);
-
 
 //   size = size | FREE
 //   *((size_t *)((char*)block+newsize+BLOCK_HEADER_SIZE)) = newsize;//Sets the last word to size
