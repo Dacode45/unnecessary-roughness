@@ -48,9 +48,16 @@ team_t team = {
 /**
  * Block macros
  *
- * void * previous
+ * void* previous
  * size_t size (union with 1 bit active)
  * (allocated data)
+ *
+ * My guess is we will eventually reorganize to:
+ * void* previous
+ * size_t size | free bit
+ * (allocated data) | (void * next_of_same_size; void* prev_of_same_size)
+ *
+ * ie seglists. Chunk to powers of 2 seems reasonable. 
  */
 typedef void * block_node;
 #define BLOCK_HEADER_SIZE ALIGN((sizeof(block_node) + sizeof(size_t)))
@@ -81,18 +88,19 @@ block_node END = NULL;
 block_node LAST_CHECK = NULL;
 size_t LAST_CHECK_SIZE = 0;
 
+// Flags
+int FREE_CALLED = 0;
+
 //Jeff McClintock running median eistimate
 int AVERAGE_REQUEST_SIZE = 0.0f;
 int NUM_REQUEST = 0;
-void ADD_REQUEST(size){
+void add_request(size){
   if(abs(size - AVERAGE_REQUEST_SIZE) > AVERAGE_REQUEST_SIZE){//Reset
     NUM_REQUEST = 0;
   }
   AVERAGE_REQUEST_SIZE += (size - AVERAGE_REQUEST_SIZE) * 1/(++NUM_REQUEST%15);
-  printf("IN ADD_REQUEST, size: %d, average: %d, number: %d\n", size, AVERAGE_REQUEST_SIZE, NUM_REQUEST );
+  printf("\tIN add_request, size: %d, average: %d, number: %d\n", size, AVERAGE_REQUEST_SIZE, NUM_REQUEST );
 }
-//FLAGS
-int FREE_CALLED = 0;
 
 /*
  * returns non-zero if macros function properly
@@ -207,12 +215,10 @@ int mm_check(void)
       has_failed = 1;
     }
 
-    sleep(1);
+    // sleep(1);
     last = current;
     current = GET_NEXT_BLOCK(current);
   }
-
-  // overlapping blocks?
 
   if(!has_failed) {
     printf("Done mm_check!\n");
@@ -233,6 +239,16 @@ int mm_init(void)
     return 0;
   }
 
+  BASE = NULL;
+  END = NULL;
+  LAST_CHECK = NULL;
+  LAST_CHECK_SIZE = 0;
+
+  FREE_CALLED = 0;
+
+  AVERAGE_REQUEST_SIZE = 0.0f;
+  NUM_REQUEST = 0;
+
   mm_check();
 
   return 0;
@@ -243,12 +259,11 @@ int mm_init(void)
  *     Always allocate a block whose size is a multiple of the alignment.
  */
 
-
-// //Go 1 past, and check the size of previous, best fit reduces fragmentation
-// //TODO add implment split
-// //ALWAYS SPLIT
+//Go 1 past, and check the size of previous, best fit reduces fragmentation
+//TODO add implment split
+//ALWAYS SPLIT
 block_node find_free(size_t request_size){
-printf("IN find_free\n" );
+printf("\tIN find_free\n" );
   request_size = ALIGN(request_size);
   if(LAST_CHECK == NULL || LAST_CHECK == BASE || FREE_CALLED || request_size < LAST_CHECK_SIZE)
     LAST_CHECK = END;
@@ -262,12 +277,13 @@ printf("IN find_free\n" );
       most_space = GET_SIZE(LAST_CHECK);
     }
     if(LAST_CHECK == BASE){
-      printf("No Free BLOCK, MARGIN: %d\n", most_space - request_size );
+      printf("\t\tNo Free BLOCK, MARGIN: %lu\n", most_space - request_size);
       return NULL;
     }
     LAST_CHECK = GET_PREVIOUS_BLOCK(LAST_CHECK);
   }
-  printf("BLOCK: %p, IS FREE, MARGIN: %d\n",LAST_CHECK, !!IS_FREE(LAST_CHECK), GET_SIZE(LAST_CHECK)-  request_size );
+  printf("\t\tBLOCK: %p, IS FREE: %d, MARGIN: %lu\n", 
+    LAST_CHECK, !!IS_FREE(LAST_CHECK), GET_SIZE(LAST_CHECK) - request_size);
 
   return LAST_CHECK;
 
@@ -287,12 +303,13 @@ int check_unique(block_node tocheck){
 // //TODO add end of heap footer
 // //Always assume that if this function is called, block is at end of list
 block_node request_space(block_node last, size_t size){
-  printf("IN request_space LAST: %p\n", last );
+  printf("\tIN request_space LAST: %p\n", last );
   block_node block;
   block = mem_sbrk(0);
   void * request = mem_sbrk(GET_BLOCK_SIZE(size));
   if(request == (void *)-1)
     return NULL;
+  printf("%p; %p; %p\n", block, request, mem_sbrk(0));
   assert(check_unique(block)); //WHY DOES this fail.
   assert(check_unique(request));
   assert(request != NULL);
@@ -308,14 +325,14 @@ block_node request_space(block_node last, size_t size){
   //printf("END: %p, BLOCK: %p\n",END, block );
   END = block;
   //printf("END: %p\n", *(block_node*)END);
-  printf("BLOCK: %p, IS GRANTED: \n",block );
+  printf("\t\tBLOCK: %p, IS GRANTED: \n",block );
 
   return block;
 }
 
 
 block_node split_block(block_node block, size_t cutoff){
-  printf("IN split_block\n" );
+  printf("\tIN split_block\n" );
   cutoff = ALIGN(cutoff);
   int isEnd = (block == END);
   block_node next_block = NULL;
@@ -334,7 +351,7 @@ block_node split_block(block_node block, size_t cutoff){
   }else{
     END = s_block;
   }
-  printf("BLOCK: %p, IS SPLIT INTO BLOCKS %p AND %p\n",block, block, s_block);
+  printf("\t\tBLOCK: %p, IS SPLIT INTO BLOCKS %p AND %p\n",block, block, s_block);
   return block;
 }
 
@@ -346,7 +363,7 @@ void *mm_malloc(size_t size)
   if (size <= 0){
     return NULL;
   }
-  ADD_REQUEST(size);
+  add_request(size);
   if (!BASE){
     //Frist call
     block = request_space(NULL, size);
@@ -372,27 +389,16 @@ void *mm_malloc(size_t size)
       assert((int)block % ALIGNMENT == 0);
       //check split
       if(GET_SIZE(block) > GET_BLOCK_SIZE(size) + GET_BLOCK_SIZE((int)AVERAGE_REQUEST_SIZE)){
-        printf("splitting FREE Block, MARGIN: %d, running average: %#lx \n", GET_SIZE(block)- GET_BLOCK_SIZE(size), AVERAGE_REQUEST_SIZE);
+        printf("\tsplitting FREE Block, MARGIN: %lu, running average: %#x \n", GET_SIZE(block)- GET_BLOCK_SIZE(size), AVERAGE_REQUEST_SIZE);
         block = split_block(block, size);
       }
       SET_FREE(block, 0);
     }
   }
 
-  printf("BLOCK: %p, IS MALLOC\n",block);
+  printf("\tBLOCK: %p, IS MALLOC\n",block);
   mm_check();
   return GET_DATA(block);
-
-  // return (void *)((char *)candidate + BLOCK_HEADER_SIZE);
-  //old
- //    int newsize = ALIGN(size + SIZE_T_SIZE);
- //    void *p = mem_sbrk(newsize);
- //    if (p == (void *)-1)
-	// return NULL;
- //    else {
- //        *(size_t *)p = size;
- //        return (void *)((char *)p + SIZE_T_SIZE);
- //    }
 }
 
 /*
@@ -411,7 +417,7 @@ void mm_free(void *ptr)
   block_node block = GET_HEADER(ptr);
   assert((int)block%8 == 0 );
   SET_FREE(block, 1);
-  printf("Freeing BLOCK: %p\n", block);
+  printf("\tFreeing BLOCK: %p\n", block);
 
   block_node prev = NULL;
   if(block != BASE)
@@ -434,7 +440,7 @@ void mm_free(void *ptr)
       }else{
         END = prev;
       }
-      printf("BLOCK: %p, has been merged left into BLOCK: %p\n",block, prev );
+      printf("\tBLOCK: %p, has been merged left into BLOCK: %p\n",block, prev );
 
       block = prev;
     }
@@ -448,12 +454,10 @@ void mm_free(void *ptr)
     }else{
       SET_PREVIOUS_BLOCK(GET_NEXT_BLOCK(next), block);
     }
-    printf("BLOCK: %p, has been merged right into BLOCK: %p\n",block, next );
+    printf("\tBLOCK: %p, has been merged right into BLOCK: %p\n",block, next );
   }
 
   mm_check();
-
-
 }
 
 /*
