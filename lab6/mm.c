@@ -59,7 +59,7 @@ typedef void * block_node;
 #define GET_DATA(blockptr) ((void*)((char*)blockptr + BLOCK_HEADER_SIZE))
 
 #define GET_PREVIOUS_BLOCK(currentBlock) *(block_node*)currentBlock
-#define GET_NEXT_BLOCK(currentBlock) (block_node)((char*)currentBlock + GET_SIZE(currentBlock))
+#define GET_NEXT_BLOCK(currentBlock) (block_node)((char*)currentBlock + BLOCK_HEADER_SIZE + GET_SIZE(currentBlock))
 
 #define FREE_MASK (1<<(sizeof(size_t)*8 - 1))
 #define GET_MASKED_SIZE_POINTER(blockPointer) ((size_t*)((char*)blockPointer + sizeof(block_node)))
@@ -165,7 +165,7 @@ int macro_checker()
   *(block_node*)testNode = (block_node)0xbee71e5;
   SET_SIZE(testNode, ALIGN(testNodeSize));
   // should properly find the next and previous blocks
-  assert(GET_NEXT_BLOCK(testNode) == (char*)testNode + ALIGN(testNodeSize));
+  assert(GET_NEXT_BLOCK(testNode) == (char*)testNode + BLOCK_HEADER_SIZE + ALIGN(testNodeSize));
   assert(GET_PREVIOUS_BLOCK(testNode) == (block_node)0xbee71e5);
 
   printf("Macros checked successfully!\n");
@@ -173,12 +173,44 @@ int macro_checker()
   return 1;
 }
 
-int mm_check(void){
-  if(!macro_checker()) {
-    return 0;
+/*
+ * returns non-zero if macros function properly
+ */
+int mm_check(void)
+{
+  int has_failed = 0;
+  printf("\tBASE: %p; END: %p\n", BASE, END);
+
+  block_node* current = BASE;
+  block_node* last = NULL;
+  while(current != NULL & current < END) {
+    printf("\t\tCHECKING: %p; SIZE: %#lx; FREE: %d\n", current, GET_SIZE(current), !!IS_FREE(current));
+
+    // Check contiguity of free space (with previous)
+    if(last == NULL) {
+    } else if(IS_FREE(last) & IS_FREE(current)) {
+      printf("Free error! %p is not connected to its free predecessor. \n", current);
+      has_failed = 1;
+    }
+
+    // Check alignment of previous pointers.
+    if(last != GET_PREVIOUS_BLOCK(current)) {
+      printf("Continuity error! %p doesn't point to previous block (%p), instead %p.\n", current, last, GET_PREVIOUS_BLOCK(current));
+      has_failed = 1;
+    }
+
+    last = current;
+    current = GET_NEXT_BLOCK(current);
   }
 
-  return 1;
+  // overlapping blocks?
+
+  if(!has_failed) {
+    printf("Done mm_check!\n");
+  } else {
+    printf("!!!! Failed mm_check.\n");
+  }
+  return !has_failed;
 }
 
 /*
@@ -191,6 +223,8 @@ int mm_init(void)
   if(!macro_checker()) {
     return 0;
   }
+
+  mm_check();
 
   return 0;
 }
@@ -351,18 +385,21 @@ void mm_free(void *ptr)
   FREE_CALLED = 1;
 
   block_node block = GET_HEADER(ptr);
-  SET_SIZE(block, GET_SIZE | FREE_MASK)
+  SET_FREE(block, 1);
+
   block_node prev = NULL;
   if(block != BASE)
     prev = GET_PREVIOUS_BLOCK(block);
+
   block_node next= NULL;
   if(block != END)
     next = GET_NEXT_BLOCK(block);
+
   if(block != BASE && prev && IS_FREE(prev)){
     size_t prev_size = GET_SIZE(prev);
     prev_size += GET_SIZE(block) + BLOCK_HEADER_SIZE;
     assert(GET_NEXT_BLOCK(prev) == block);
-    SET_SIZE(prev, prev_size | FREE_MASK);
+    SET_SIZE(prev, prev_size);
     if(block != END){
       *(block_node*)next = prev;
     }
@@ -371,7 +408,7 @@ void mm_free(void *ptr)
   if(block != END && next && IS_FREE(next)){
     size_t block_size = GET_SIZE(block);
     block_size += GET_SIZE(next) + BLOCK_HEADER_SIZE;
-    SET_SIZE(block, block_size | FREE_MASK);
+    SET_SIZE(block, block_size );
   }
 
   mm_check();
