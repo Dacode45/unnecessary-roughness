@@ -95,10 +95,10 @@ int macro_checker() {
 
 
 // //Free list Stuff
-block_header* BASE=NULL;
-block_header* END = NULL;
-block_header * LAST_CHECK = NULL
-size_t LAST_CHECK_SIZE = 0
+block_node* BASE=NULL;
+block_node* END = NULL;
+block_node * LAST_CHECK = NULL;
+size_t LAST_CHECK_SIZE = 0;
 
 /*
  * mm_init - initialize the malloc package.
@@ -171,7 +171,7 @@ int mm_init(void)
 // //Go 1 past, and check the size of previous, best fit reduces fragmentation
 // //TODO add implment split
 // //ALWAYS SPLIT
-block_header find_free(size_t request_size){
+block_node find_free(size_t request_size){
 //   block_header *last =NULL;
 //   block_header *current = LAST_CHECK;
 //   if(request_size < LAST_CHECK_SIZE && LAST_CHECK){
@@ -189,7 +189,7 @@ block_header find_free(size_t request_size){
 //     }
 //     return NULL;
 //   }while(current); //End of list should be null
-  return NULL
+  return NULL;
 }
 
 // //TODO add end of heap footer
@@ -200,13 +200,13 @@ block_node request_space(block_node* last, size_t size){
   void * request = mem_sbrk(GET_BLOCK_SIZE(size));
   if(request == (void *)-1)
     return NULL;
-  assert(request %ALIGNMENT == 0);
+  assert((int)request %ALIGNMENT == 0);
   if(last){
     *last = block;
   }
   size = size | FREE_MASK;
   SET_SIZE(block, size);
-  assert(block %ALIGNMENT == 0);
+  assert((int)block % ALIGNMENT == 0);
   block = NULL; //next is null
   END = block;
   return block;
@@ -221,7 +221,7 @@ block_node request_space(block_node* last, size_t size){
 //   assert(request % 8 == 0) //check 8 byte allignment
 //   if(last){
 //     set_next(last, block);
-}
+
 
 //   size = size | FREE
 //   *((size_t *)((char*)block+newsize+BLOCK_HEADER_SIZE)) = newsize;//Sets the last word to size
@@ -256,7 +256,7 @@ void *mm_malloc(size_t size)
         return NULL;
       }
     }else{
-      assert(block %ALIGNMENT == 0);
+      assert((int)block % ALIGNMENT == 0);
       size = GET_SIZE(block) & ~FREE_MASK;
       SET_SIZE(block, size);
     }
