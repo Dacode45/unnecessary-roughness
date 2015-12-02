@@ -66,8 +66,9 @@ typedef void * block_node;
 #define GET_MASKED_SIZE_POINTER(blockPointer) ((size_t*)((char*)blockPointer + sizeof(block_node)))
 #define GET_MASKED_SIZE(blockPointer) (*GET_MASKED_SIZE_POINTER(blockPointer))
 #define IS_FREE(blockPointer) (GET_MASKED_SIZE(blockPointer) & FREE_MASK)
+#define SET_FREE(blockPointer, free) (GET_MASKED_SIZE(blockPointer) = !!(free) << (sizeof(size_t)*8 - 1) | (GET_MASKED_SIZE(blockPointer) << 1 >> 1))
 #define GET_SIZE(blockPointer) (GET_MASKED_SIZE(blockPointer) & ~FREE_MASK)
-#define SET_SIZE(blockPointer, size) ((GET_MASKED_SIZE(blockPointer)) = size)
+#define SET_SIZE(blockPointer, size) ((GET_MASKED_SIZE(blockPointer)) = size | IS_FREE(blockPointer))
 
 
 int macro_checker() {
@@ -93,11 +94,34 @@ int macro_checker() {
   // TODO that's hard
 
   // verify size & free access
-  // should accurately read free or not
+  // should accurately read a free set
   GET_MASKED_SIZE(testNode) = 1 << (sizeof(size_t)*8 - 1);
   assert(IS_FREE(testNode));
-  GET_MASKED_SIZE(testNode) = ~(GET_MASKED_SIZE(testNode));
+  assert(GET_SIZE(testNode) == 0);
+  // should accurately read free set even if size is still set
+  GET_MASKED_SIZE(testNode) = ~0;
+  assert(IS_FREE(testNode));
+  // should accurately read a non-free set
+  GET_MASKED_SIZE(testNode) = GET_MASKED_SIZE(testNode) >> 1;
   assert(!IS_FREE(testNode));
+  assert(GET_SIZE(testNode) == ~(1 << (sizeof(size_t)*8 - 1)));
+  
+  // should accurately write frees
+  SET_FREE(testNode, 1);
+  assert(IS_FREE(testNode));
+  SET_FREE(testNode, 0);
+  assert(!IS_FREE(testNode));
+  // should accurately write frees even if not 1 or 0
+  SET_FREE(testNode, 1505);
+  assert(IS_FREE(testNode));
+
+  // should accurately write sizes
+  const size_t testSize = 5244;
+  SET_SIZE(testNode, testSize);
+  assert(GET_SIZE(testNode) == testSize);
+
+  // should NOT overwrite size or free on writes to other
+
 
   // printf("block size: %lu\n", GET_BLOCK_SIZE(0));
   // printf("block size: %lu\n", GET_BLOCK_SIZE(4));
@@ -129,58 +153,7 @@ int mm_init(void)
  *     Always allocate a block whose size is a multiple of the alignment.
  */
 
-// //Cannot call with BASE
-// inline block_header* get_prev(block_header* block){
-//   size_t size = GETSIZE(*(size_t*)((char *)block -SIZE_T_SIZE))
-//   assert((char *)block -SIZE_T_SIZE % 8 == 0) //check 8 byte allignment
-//   prev = (block_header*)((char *)block - size - TOTAL_HEADER_SIZE);
-//   assert(prev % 8 == 0) //check 8 byte allignment
-//   return prev;
-// }
-// inline block_header* get_next(block_header* block){
-//   block_header* next = *block;
-//   assert(next & 8 == 0);
-//   return next;
-// }
 
-// inline size_t* get_size_ptr(block_header* block){
-//   block_header* next = *block;
-//   size_t* size = (size_t*)((char *)block -SIZE_T_SIZE);
-//   assert(size % 8 == 0) //check 8 byte allignment
-//   return size;
-// }
-
-// inline size_t get_prev_size(block_header* block){
-//   size_t size = GETSIZE(*(size_t*)((char *)block -SIZE_T_SIZE));
-//   assert((char *)block -SIZE_T_SIZE % 8 == 0) //check 8 byte allignment
-//   return size;
-// }
-
-
-// inline size_t get_prev_size_ptr(block_header* block){
-//   size_t size = (size_t*)((char *)block -SIZE_T_SIZE);
-//   assert(size % 8 == 0) //check 8 byte allignment
-//   return size;
-// }
-
-// inline block_header* get_block_header(void *ptr){
-//   return (block_header*)(ptr - BLOCK_HEADER_SIZE);
-// }
-
-// inline void* get_data(block_header* block){
-//   return (void*)((char*)block + BLOCK_HEADER_SIZE);
-// }
-
-// inline void set_next(block_header* block, block_header next){
-//   *block = next;
-// }
-
-// //set free
-// inline void set_free(block_header* block, int should_free){
-//   if(should_free){
-
-//   }
-// }
 // //Go 1 past, and check the size of previous, best fit reduces fragmentation
 // //TODO add implment split
 // //ALWAYS SPLIT
