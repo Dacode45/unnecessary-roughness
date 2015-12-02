@@ -71,15 +71,21 @@ typedef void * block_node;
 #define SET_SIZE(blockPointer, size) ((GET_MASKED_SIZE(blockPointer)) = size | IS_FREE(blockPointer))
 
 
-int macro_checker() {
-  // verify block_header_size, should be 8 bytes
+int macro_checker() 
+{
+  /**
+   * BLOCK_HEADER_SIZE
+   */
+  // should be 8 bytes
   // b/c sizeof(void*) = 4, sizeof(size_t) = 4
   // 4 + 4 = 8
   assert(sizeof(void*) == 4);
   assert(sizeof(size_t) == 4);
   assert(BLOCK_HEADER_SIZE == 8);
 
-  // verify header and data getters
+  /**
+   * Header & Data getters
+   */
   // should be inverses
   block_node testNode = malloc(GET_BLOCK_SIZE(8));
   assert(GET_HEADER(GET_DATA(testNode)) == testNode);
@@ -90,10 +96,14 @@ int macro_checker() {
   //                 ^
   assert(GET_DATA(testNode) == testNode + BLOCK_HEADER_SIZE);
 
-  // verify block traversal
+  /**
+   * Block traversal
+   */
   // TODO that's hard
 
-  // verify size & free access
+  /**
+   * Size and Free
+   */
   // should accurately read a free set
   GET_MASKED_SIZE(testNode) = 1 << (sizeof(size_t)*8 - 1);
   assert(IS_FREE(testNode));
@@ -121,13 +131,19 @@ int macro_checker() {
   assert(GET_SIZE(testNode) == testSize);
 
   // should NOT overwrite size or free on writes to other
+  SET_FREE(testNode, 0);
+  const size_t anotherTestSize = 12;
+  SET_SIZE(testNode, anotherTestSize);
+  assert(!IS_FREE(testNode));
+  SET_FREE(testNode, 1);
+  assert(GET_SIZE(testNode) == anotherTestSize);
+  const size_t yetAnotherTestSize = 8900444;
+  SET_SIZE(testNode, yetAnotherTestSize);
+  assert(IS_FREE(testNode));
+  SET_FREE(testNode, 0);
+  assert(GET_SIZE(testNode) == yetAnotherTestSize);
 
-
-  // printf("block size: %lu\n", GET_BLOCK_SIZE(0));
-  // printf("block size: %lu\n", GET_BLOCK_SIZE(4));
-  // printf("block size: %lu\n", GET_BLOCK_SIZE(8));
-  // printf("block size: %lu\n", GET_BLOCK_SIZE(300));
-  return 0;
+  return 1;
 }
 
 
@@ -137,14 +153,22 @@ block_node* END = NULL;
 block_node * LAST_CHECK = NULL;
 size_t LAST_CHECK_SIZE = 0;
 
+int mm_check(void) 
+{
+  if(!macro_checker()) {
+    return 0;
+  }
+  
+  return 1;
+}
+
 /*
  * mm_init - initialize the malloc package.
  TODO check for multiple calls
  */
 int mm_init(void)
 {
-  macro_checker();
-
+  mm_check();
   return 0;
 }
 
