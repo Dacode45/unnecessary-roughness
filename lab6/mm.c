@@ -225,7 +225,6 @@ block_node request_space(block_node* last, size_t size){
 // }
 
 
-
 void *mm_malloc(size_t size)
 {
   block_header block;
@@ -250,35 +249,12 @@ void *mm_malloc(size_t size)
       }
     }else{
       assert(block %ALIGNMENT == 0);
-
+      size = GET_SIZE(block) & ~FREE_MASK;
+      SET_SIZE(block, size);
     }
   }
-  // size = ALIGN(size);
-  // block_header block;
-  // if (size <= 0){
-  //   return NULL;
-  // }
 
-  // if (!BASE){
-  //   block = request_space(NULL, size);
-  //   if (!block){
-  //     return NULL;
-  //   }
-  //   BASE = block;
-  // }else{
-  //   block_header *candidate = find_free(size);
-  //   if(!candidate){ //no candidate
-  //     //get space
-  //     candidate = request_space(END, size);
-  //     if (!candidate){
-  //       return NULL;
-  //     }
-  //   }else{
-  //     assert(candidate %8 == 0);
-  //     candidate_size = get_size_ptr(candidate);
-  //     *candidate_size = *candidate_size & ~FREE;
-  //   }
-  // }
+  return GET_DATA(block);
 
   // return (void *)((char *)candidate + BLOCK_HEADER_SIZE);
   //old
