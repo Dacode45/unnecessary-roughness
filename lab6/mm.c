@@ -88,10 +88,10 @@ int macro_checker() {
 
 
 // //Free list Stuff
-// block_header* BASE=NULL;
-// block_header* END = NULL;
-// block_header * LAST_CHECK = NULL
-// size_t LAST_CHECK_SIZE = 0
+block_header* BASE=NULL;
+block_header* END = NULL;
+block_header * LAST_CHECK = NULL
+size_t LAST_CHECK_SIZE = 0
 
 /*
  * mm_init - initialize the malloc package.
@@ -164,7 +164,7 @@ int mm_init(void)
 // //Go 1 past, and check the size of previous, best fit reduces fragmentation
 // //TODO add implment split
 // //ALWAYS SPLIT
-// block_header find_free(size_t request_size){
+block_header find_free(size_t request_size){
 //   block_header *last =NULL;
 //   block_header *current = LAST_CHECK;
 //   if(request_size < LAST_CHECK_SIZE && LAST_CHECK){
@@ -182,7 +182,8 @@ int mm_init(void)
 //     }
 //     return NULL;
 //   }while(current); //End of list should be null
-// }
+  return NULL
+}
 
 // //TODO add end of heap footer
 // //Always assume that if this function is called, block is at end of list
@@ -227,7 +228,7 @@ block_node request_space(block_node* last, size_t size){
 
 void *mm_malloc(size_t size)
 {
-  block_header block;
+  block_node block;
   if (size <= 0){
     return NULL;
   }
