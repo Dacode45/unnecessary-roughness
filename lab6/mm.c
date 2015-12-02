@@ -59,6 +59,7 @@ typedef void * block_node;
 #define GET_DATA(blockptr) ((void*)((char*)blockptr + BLOCK_HEADER_SIZE))
 
 #define GET_PREVIOUS_BLOCK(currentBlock) *(block_node*)currentBlock
+#define SET_PREVIOUS_BLOCK(blockPointer, previous) (GET_PREVIOUS_BLOCK(blockPointer) = (block_node)previous)
 #define GET_NEXT_BLOCK(currentBlock) (block_node)((char*)currentBlock + BLOCK_HEADER_SIZE + GET_SIZE(currentBlock))
 
 #define FREE_MASK (1<<(sizeof(size_t)*8 - 1))
@@ -162,7 +163,8 @@ int macro_checker()
    * Block traversal
    */
   // set up some dummy values (previous ptr and size)
-  *(block_node*)testNode = (block_node)0xbee71e5;
+  // *(block_node*)testNode = (block_node)0xbee71e5;
+  SET_PREVIOUS_BLOCK(testNode, 0xbee71e5);
   SET_SIZE(testNode, ALIGN(testNodeSize));
   // should properly find the next and previous blocks
   assert(GET_NEXT_BLOCK(testNode) == (char*)testNode + BLOCK_HEADER_SIZE + ALIGN(testNodeSize));
@@ -174,7 +176,7 @@ int macro_checker()
 }
 
 /*
- * returns non-zero if macros function properly
+ * returns non-zero if heap is sensible.
  */
 int mm_check(void)
 {
