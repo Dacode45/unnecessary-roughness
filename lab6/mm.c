@@ -91,7 +91,7 @@ int FREE_CALLED = 0;
 float AVERAGE_REQUEST_SIZE = 0.0f;
 int NUM_REQUEST = 0;
 const int EARLY_POINTS = 16;
-const float STEP_SIZE = 1.0f / EARLY_POINTS;
+const float STEP_SIZE = 0.0625f; // 1.0f / EARLY_POINTS
 void add_request(size_t size){
   float s = (float)size;
 
