@@ -1,13 +1,9 @@
 /*
- * mm-naive.c - The fastest, least memory-efficient malloc package.
+ * mm.c - The fastest, least memory-efficient malloc package.
  *
- * In this naive approach, a block is allocated by simply incrementing
- * the brk pointer.  A block is pure payload. There are no headers or
- * footers.  Blocks are never coalesced or reused. Realloc is
- * implemented directly using mm_malloc and mm_free.
+ * We use a simple implicit list solution atm. 
+ * Propably will transform to seglist.
  *
- * NOTE TO STUDENTS: Replace this header comment with your own header
- * comment that gives a high level description of your solution.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -99,7 +95,7 @@ void add_request(size){
     NUM_REQUEST = 0;
   }
   AVERAGE_REQUEST_SIZE += (size - AVERAGE_REQUEST_SIZE) * 1/(++NUM_REQUEST%15);
-  printf("\tIN add_request, size: %d, average: %d, number: %d\n", size, AVERAGE_REQUEST_SIZE, NUM_REQUEST );
+  // printf("\tIN add_request, size: %d, average: %d, number: %d\n", size, AVERAGE_REQUEST_SIZE, NUM_REQUEST );
 }
 
 /*
@@ -195,7 +191,7 @@ int macro_checker()
 int mm_check(void)
 {
   int has_failed = 0;
-  printf("\tBASE: %p; END: %p\n", BASE, END);
+  printf("BASE: %p; END: %p\n", BASE, END);
 
   block_node current = BASE;
   block_node last = NULL;
@@ -215,6 +211,7 @@ int mm_check(void)
       has_failed = 1;
     }
 
+    // TODO remove call from final code.
     // sleep(1);
     last = current;
     current = GET_NEXT_BLOCK(current);
@@ -234,10 +231,13 @@ int mm_check(void)
  */
 int mm_init(void)
 {
-  // TODO remove call from final code.
-  if(!macro_checker()) {
-    return 0;
-  }
+  #ifdef DEBUG
+  #ifndef NDEBUG
+    if(!macro_checker()) {
+      return 0;
+    }
+  #endif
+  #endif
 
   BASE = NULL;
   END = NULL;
@@ -249,7 +249,11 @@ int mm_init(void)
   AVERAGE_REQUEST_SIZE = 0.0f;
   NUM_REQUEST = 0;
 
-  mm_check();
+  #ifdef DEBUG
+  #ifndef NDEBUG
+    mm_check();
+  #endif
+  #endif
 
   return 0;
 }
@@ -263,7 +267,7 @@ int mm_init(void)
 //TODO add implment split
 //ALWAYS SPLIT
 block_node find_free(size_t request_size){
-printf("\tIN find_free\n" );
+  // // printf("\tIN find_free\n" );
   request_size = ALIGN(request_size);
   if(LAST_CHECK == NULL || LAST_CHECK == BASE || FREE_CALLED || request_size < LAST_CHECK_SIZE)
     LAST_CHECK = END;
@@ -277,13 +281,12 @@ printf("\tIN find_free\n" );
       most_space = GET_SIZE(LAST_CHECK);
     }
     if(LAST_CHECK == BASE){
-      printf("\t\tNo Free BLOCK, MARGIN: %lu\n", most_space - request_size);
+      // printf("\t\tNo Free BLOCK, MARGIN: %lu\n", most_space - request_size);
       return NULL;
     }
     LAST_CHECK = GET_PREVIOUS_BLOCK(LAST_CHECK);
   }
-  printf("\t\tBLOCK: %p, IS FREE: %d, MARGIN: %lu\n", 
-    LAST_CHECK, !!IS_FREE(LAST_CHECK), GET_SIZE(LAST_CHECK) - request_size);
+  // printf("\t\tBLOCK: %p, IS FREE: %d, MARGIN: %lu\n", LAST_CHECK, !!IS_FREE(LAST_CHECK), GET_SIZE(LAST_CHECK) - request_size);
 
   return LAST_CHECK;
 
@@ -303,13 +306,13 @@ int check_unique(block_node tocheck){
 // //TODO add end of heap footer
 // //Always assume that if this function is called, block is at end of list
 block_node request_space(block_node last, size_t size){
-  printf("\tIN request_space LAST: %p\n", last );
+  // printf("\tIN request_space LAST: %p\n", last );
   block_node block;
   block = mem_sbrk(0);
   void * request = mem_sbrk(GET_BLOCK_SIZE(size));
   if(request == (void *)-1)
     return NULL;
-  printf("%p; %p; %p\n", block, request, mem_sbrk(0));
+  // printf("%p; %p; %p\n", block, request, mem_sbrk(0));
   assert(check_unique(block)); //WHY DOES this fail.
   assert(check_unique(request));
   assert(request != NULL);
@@ -322,17 +325,17 @@ block_node request_space(block_node last, size_t size){
   SET_FREE(block, 1);
   assert((int)block % ALIGNMENT == 0);
   //*(block_node *)block = NULL; //next is null
-  //printf("END: %p, BLOCK: %p\n",END, block );
+  //// printf("END: %p, BLOCK: %p\n",END, block );
   END = block;
-  //printf("END: %p\n", *(block_node*)END);
-  printf("\t\tBLOCK: %p, IS GRANTED: \n",block );
+  //// printf("END: %p\n", *(block_node*)END);
+  // printf("\t\tBLOCK: %p, IS GRANTED: \n",block );
 
   return block;
 }
 
 
 block_node split_block(block_node block, size_t cutoff){
-  printf("\tIN split_block\n" );
+  // printf("\tIN split_block\n" );
   cutoff = ALIGN(cutoff);
   int isEnd = (block == END);
   block_node next_block = NULL;
@@ -351,13 +354,13 @@ block_node split_block(block_node block, size_t cutoff){
   }else{
     END = s_block;
   }
-  printf("\t\tBLOCK: %p, IS SPLIT INTO BLOCKS %p AND %p\n",block, block, s_block);
+  // printf("\t\tBLOCK: %p, IS SPLIT INTO BLOCKS %p AND %p\n",block, block, s_block);
   return block;
 }
 
 void *mm_malloc(size_t size)
 {
-  printf("IN mm_malloc, SIZE = %#lx\n", size );
+  // printf("IN mm_malloc, SIZE = %#lx\n", size );
 
   block_node block;
   if (size <= 0){
@@ -376,7 +379,7 @@ void *mm_malloc(size_t size)
     block = find_free(size);
     //mm_check();
     if(!block){
-      //printf("No FREE block\n");
+      //// printf("No FREE block\n");
       //get space
       block = request_space(END, size);
       if(!block){
@@ -385,19 +388,24 @@ void *mm_malloc(size_t size)
       SET_FREE(block, 0);
 
     }else{
-      //printf("FREE BLOCK");
+      //// printf("FREE BLOCK");
       assert((int)block % ALIGNMENT == 0);
       //check split
       if(GET_SIZE(block) > GET_BLOCK_SIZE(size) + GET_BLOCK_SIZE((int)AVERAGE_REQUEST_SIZE)){
-        printf("\tsplitting FREE Block, MARGIN: %lu, running average: %#x \n", GET_SIZE(block)- GET_BLOCK_SIZE(size), AVERAGE_REQUEST_SIZE);
+        // printf("\tsplitting FREE Block, MARGIN: %lu, running average: %#x \n", GET_SIZE(block)- GET_BLOCK_SIZE(size), AVERAGE_REQUEST_SIZE);
         block = split_block(block, size);
       }
       SET_FREE(block, 0);
     }
   }
 
-  printf("\tBLOCK: %p, IS MALLOC\n",block);
-  mm_check();
+  // printf("\tBLOCK: %p, IS MALLOC\n",block);
+  #ifdef DEBUG
+  #ifndef NDEBUG
+    mm_check();
+  #endif
+  #endif
+    
   return GET_DATA(block);
 }
 
@@ -407,7 +415,7 @@ void *mm_malloc(size_t size)
  */
 void mm_free(void *ptr)
 {
-  printf("IN mm_free\n" );
+  // printf("IN mm_free\n" );
 
   if(!ptr || ((int)ptr%ALIGNMENT != 0)){
     return;
@@ -417,7 +425,7 @@ void mm_free(void *ptr)
   block_node block = GET_HEADER(ptr);
   assert((int)block%8 == 0 );
   SET_FREE(block, 1);
-  printf("\tFreeing BLOCK: %p\n", block);
+  // printf("\tFreeing BLOCK: %p\n", block);
 
   block_node prev = NULL;
   if(block != BASE)
@@ -440,7 +448,7 @@ void mm_free(void *ptr)
       }else{
         END = prev;
       }
-      printf("\tBLOCK: %p, has been merged left into BLOCK: %p\n",block, prev );
+      // printf("\tBLOCK: %p, has been merged left into BLOCK: %p\n",block, prev );
 
       block = prev;
     }
@@ -454,10 +462,14 @@ void mm_free(void *ptr)
     }else{
       SET_PREVIOUS_BLOCK(GET_NEXT_BLOCK(next), block);
     }
-    printf("\tBLOCK: %p, has been merged right into BLOCK: %p\n",block, next );
+    // printf("\tBLOCK: %p, has been merged right into BLOCK: %p\n",block, next );
   }
 
-  mm_check();
+  #ifdef DEBUG
+  #ifndef NDEBUG
+    mm_check();
+  #endif
+  #endif
 }
 
 /*
@@ -465,7 +477,7 @@ void mm_free(void *ptr)
  */
 void *mm_realloc(void *ptr, size_t size)
 {
-  printf("IN mm_realloc\n" );
+  // printf("IN mm_realloc\n" );
 
     void *oldptr = ptr;
     void *newptr;
