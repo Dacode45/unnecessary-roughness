@@ -323,17 +323,19 @@ void mm_free(void *ptr)
   block_node block = GET_HEADER(ptr);
   block_node prev = GET_PREVIOUS_BLOCK(block);
   block_node next;
+  if(block != END)
+    next = GET_NEXT_BLOCK(block);
   if(IS_FREE(prev)){
     size_t prev_size = GET_SIZE(prev);
     prev_size += GET_SIZE(block) + BLOCK_HEADER_SIZE;
     assert(GET_NEXT_BLOCK(prev) == block);
     SET_SIZE(prev, prev_size | FREE_MASK);
     if(block != END){
-      *next = prev;
+      *(block_node*)next = prev;
     }
     block = prev;
   }
-  if(block != END && IS_FREE(next = GET_NEXT_BLOCK(block))){
+  if(block != END && IS_FREE(next)){
     size_t block_size = GET_SIZE(block);
     block_size += GET_SIZE(next) + BLOCK_HEADER_SIZE;
     SET_SIZE(block, block_size | FREE_MASK);
