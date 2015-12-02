@@ -53,23 +53,37 @@ team_t team = {
  */
 
 typedef void * block_node;
-#define BLOCK_NODE_SIZE (ALIGN(sizeof(block_node)))
-#define VALID_SIZE (ALIGN(sizeof(unsigned char)))
-#define BLOCK_HEADER_SIZE BLOCK_NODE_SIZE + SIZE_T_SIZE
+#define BLOCK_HEADER_SIZE ALIGN((sizeof(block_node) + sizeof(size_t)))
 
-#define GET_PREVIOUS_BLOCK(currentBlock) (block_node)*currentBlock
-#define GET_NEXT_BLOCK(currentBlock) (block_node)((char*)currentBlock + GET_SIZE(currentBlock))
+#define GET_BLOCK_SIZE(size) (ALIGN((size) + BLOCK_HEADER_SIZE))
 #define GET_HEADER(dataptr) ((block_node)((char*)dataptr - BLOCK_HEADER_SIZE))
 #define GET_DATA(blockptr) ((void*)((char*)blockptr + BLOCK_HEADER_SIZE))
 
+#define GET_PREVIOUS_BLOCK(currentBlock) (block_node)*currentBlock
+#define GET_NEXT_BLOCK(currentBlock) (block_node)((char*)currentBlock + GET_SIZE(currentBlock))
+
 #define FREE_MASK (1<<(sizeof(size_t) - 1))
-#define GET_MASKED_SIZE(blockPointer) (*(size_t*)((char*)blockPointer + BLOCK_NODE_SIZE))
+#define GET_MASKED_SIZE_POINTER(blockPointer) ((size_t*)((char*)blockPointer + BLOCK_NODE_SIZE))
+#define GET_MASKED_SIZE(blockPointer) (*GET_MASKED_SIZE_POINTER(blockPointer))
 #define IS_FREE(blockPointer) (GET_MASKED_SIZE(blockPointer) & FREE_MASK)
 #define GET_SIZE(blockPointer) (GET_MASKED_SIZE(blockPointer) & ~FREE_MASK)
+#define SET_SIZE(blockPointer, size) ((GET_MASKED_SIZE(blockPointer)) = size)
 
 
 int macro_checker() {
 
+  // verify block_header_size, should be 8 bytes
+  // b/c sizeof(void*) = 4, sizeof(size_t) = 4
+  // 4 + 4 = 8
+  assert(sizeof(void*) == 4);
+  assert(sizeof(size_t) == 4);
+  assert(BLOCK_HEADER_SIZE == 8);
+
+  // printf("block size: %lu\n", GET_BLOCK_SIZE(0));
+  // printf("block size: %lu\n", GET_BLOCK_SIZE(4));
+  // printf("block size: %lu\n", GET_BLOCK_SIZE(8));
+  // printf("block size: %lu\n", GET_BLOCK_SIZE(300));
+  return 0;
 }
 
 
@@ -85,7 +99,9 @@ int macro_checker() {
  */
 int mm_init(void)
 {
-    return 0;
+  macro_checker();
+
+  return 0;
 }
 
 /*
