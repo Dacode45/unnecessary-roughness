@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <unistd.h>
+#include <math.h>
 #include <string.h>
 
 #include "mm.h"
@@ -62,6 +63,8 @@ typedef void * block_node;
 #define SET_PREVIOUS_BLOCK(blockPointer, previous) (GET_PREVIOUS_BLOCK(blockPointer) = (block_node)previous)
 #define GET_NEXT_BLOCK(currentBlock) (block_node)((char*)currentBlock + BLOCK_HEADER_SIZE + GET_SIZE(currentBlock))
 
+#define GET_NEXT_FREE_BLOCK(currentBlock, size) 0 // stub
+
 #define FREE_MASK (1<<(sizeof(size_t)*8 - 1))
 #define GET_MASKED_SIZE_POINTER(blockPointer) ((size_t*)((char*)blockPointer + sizeof(block_node)))
 #define GET_MASKED_SIZE(blockPointer) (*GET_MASKED_SIZE_POINTER(blockPointer))
@@ -81,7 +84,7 @@ size_t LAST_CHECK_SIZE = 0;
 //Jeff McClintock running median eistimate
 float AVERAGE_REQUEST_SIZE = 0.0f;
 float MEDIAN_REQUEST_SIZE = 0.0f;
-inline void ADD_REQUEST(size){
+void ADD_REQUEST(size){
   AVERAGE_REQUEST_SIZE += (size -AVERAGE_REQUEST_SIZE) * 0.1f;
   MEDIAN_REQUEST_SIZE += copysign(AVERAGE_REQUEST_SIZE * .01, size - MEDIAN_REQUEST_SIZE);
 }
@@ -183,10 +186,10 @@ int mm_check(void)
   int has_failed = 0;
   printf("\tBASE: %p; END: %p\n", BASE, END);
 
-  block_node* current = BASE;
-  block_node* last = NULL;
-  while(current != NULL & current < END) {
-    printf("\t\tCHECKING: %p; SIZE: %#lx; FREE: %d\n", current, GET_SIZE(current), !!IS_FREE(current));
+  block_node current = BASE;
+  block_node last = NULL;
+  while(current != NULL & last < END) {
+    printf("\tCHECKING: %p; SIZE: %#lx; FREE: %d; NEXT: %p; PREVIOUS: %p\n", current, GET_SIZE(current), !!IS_FREE(current), GET_NEXT_BLOCK(current), GET_PREVIOUS_BLOCK(current));
 
     // Check contiguity of free space (with previous)
     if(last == NULL) {
@@ -201,6 +204,7 @@ int mm_check(void)
       has_failed = 1;
     }
 
+    sleep(1);
     last = current;
     current = GET_NEXT_BLOCK(current);
   }
@@ -368,7 +372,6 @@ void *mm_malloc(size_t size)
   }
 
   mm_check();
-
   return GET_DATA(block);
 
   // return (void *)((char *)candidate + BLOCK_HEADER_SIZE);
