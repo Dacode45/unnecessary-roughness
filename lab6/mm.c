@@ -72,9 +72,9 @@ typedef void * block_node;
 /**
  * Bookkeeping
  */
-block_node* BASE = NULL;
-block_node* END = NULL;
-block_node* LAST_CHECK = NULL;
+block_node BASE = NULL;
+block_node END = NULL;
+block_node LAST_CHECK = NULL;
 size_t LAST_CHECK_SIZE = 0;
 
 //Jeff McClintock running median eistimate
@@ -168,6 +168,8 @@ int macro_checker()
   assert(GET_NEXT_BLOCK(testNode) == (char*)testNode + ALIGN(testNodeSize));
   assert(GET_PREVIOUS_BLOCK(testNode) == (block_node)0xbee71e5);
 
+  printf("Macros checked successfully!\n");
+
   return 1;
 }
 
@@ -186,7 +188,10 @@ int mm_check(void){
 int mm_init(void)
 {
   // TODO remove call from final code.
-  mm_check();
+  if(!macro_checker()) {
+    return 0;
+  }
+
   return 0;
 }
 
@@ -238,7 +243,7 @@ block_node find_free(size_t request_size){
 
 // //TODO add end of heap footer
 // //Always assume that if this function is called, block is at end of list
-block_node request_space(block_node* last, size_t size){
+block_node request_space(block_node last, size_t size){
   block_node block;
   block = mem_sbrk(0);
   void * request = mem_sbrk(GET_BLOCK_SIZE(size));
@@ -246,13 +251,16 @@ block_node request_space(block_node* last, size_t size){
     return NULL;
   assert((int)request %ALIGNMENT == 0);
   if(last){
-    *last = block;
+    *(block_node*)block = &last;
   }
-  size = ALIGN(size) | FREE_MASK;
+  size = ALIGN(size);
   SET_SIZE(block, size);
+  SET_FREE(block, 1);
   assert((int)block % ALIGNMENT == 0);
-  *(block_node *)block = NULL; //next is null
+  //*(block_node *)block = NULL; //next is null
   END = block;
+  printf("END: %p\n", *(block_node*)END);
+
   return block;
 }
 
@@ -293,6 +301,7 @@ void *mm_malloc(size_t size)
     if(!block){
       return NULL;
     }
+    SET_FREE(block, 0);
     BASE = block;
   }else{
     block = find_free(size);
@@ -302,16 +311,19 @@ void *mm_malloc(size_t size)
       if(!block){
         return NULL;
       }
+      SET_FREE(block, 0);
+
+    }else{
+      assert((int)block % ALIGNMENT == 0);
       //check split
       if(GET_SIZE(block) > GET_BLOCK_SIZE(size) + GET_BLOCK_SIZE((int)MEDIAN_REQUEST_SIZE)){
         block = split_block(block, size);
       }
-    }else{
-      assert((int)block % ALIGNMENT == 0);
-      size = GET_SIZE(block);
-      SET_SIZE(block, size);
+      SET_SIZE(block, ALIGN(size));
     }
   }
+
+  mm_check();
 
   return GET_DATA(block);
 
@@ -339,6 +351,7 @@ void mm_free(void *ptr)
   FREE_CALLED = 1;
 
   block_node block = GET_HEADER(ptr);
+  SET_SIZE(block, GET_SIZE | FREE_MASK)
   block_node prev = NULL;
   if(block != BASE)
     prev = GET_PREVIOUS_BLOCK(block);
@@ -360,6 +373,9 @@ void mm_free(void *ptr)
     block_size += GET_SIZE(next) + BLOCK_HEADER_SIZE;
     SET_SIZE(block, block_size | FREE_MASK);
   }
+
+  mm_check();
+
   // //Check null pointer
   // if (!ptr){
   //   return
