@@ -95,11 +95,14 @@ int macro_checker() {
 
 
 // //Free list Stuff
-block_node* BASE=NULL;
-block_node* END = NULL;
-block_node * LAST_CHECK = NULL;
+block_node BASE=NULL;
+block_node END = NULL;
+block_node LAST_CHECK = NULL;
 size_t LAST_CHECK_SIZE = 0;
 
+int NUM_REQUEST = 0;
+int AVERAGE_REQUEST_SIZE = 0;
+#define ADD_REQUEST(size) (AVERAGE_REQUEST_SIZE += ALIGN(size)/(++NUM_REQUEST));
 /*
  * mm_init - initialize the malloc package.
  TODO check for multiple calls
@@ -172,6 +175,21 @@ int mm_init(void)
 // //TODO add implment split
 // //ALWAYS SPLIT
 block_node find_free(size_t request_size){
+  request_size = ALIGN(request_size);
+  block_node current = LAST_CHECK;
+  if(request_size < LAST_CHECK_SIZE){
+    current = END;
+  }
+  while(current && GET_BLOCK_SIZE(current) < request_size){
+    current = *current;
+  }
+  if(current == NULL)
+    return current;
+
+  LAST_CHECK = current;
+  LAST_CHECK_SIZE = request_size;
+  return current;
+
 //   block_header *last =NULL;
 //   block_header *current = LAST_CHECK;
 //   if(request_size < LAST_CHECK_SIZE && LAST_CHECK){
@@ -204,10 +222,10 @@ block_node request_space(block_node* last, size_t size){
   if(last){
     *last = block;
   }
-  size = size | FREE_MASK;
+  size = ALIGN(size) | FREE_MASK;
   SET_SIZE(block, size);
   assert((int)block % ALIGNMENT == 0);
-  block = NULL; //next is null
+  *block = NULL; //next is null
   END = block;
   return block;
 }
@@ -239,7 +257,7 @@ void *mm_malloc(size_t size)
   if (size <= 0){
     return NULL;
   }
-
+  ADD_REQUEST(size)
   if (!BASE){
     //Frist call
     block = request_space(NULL, size);
@@ -257,7 +275,7 @@ void *mm_malloc(size_t size)
       }
     }else{
       assert((int)block % ALIGNMENT == 0);
-      size = GET_SIZE(block) & ~FREE_MASK;
+      size = GET_SIZE(block);
       SET_SIZE(block, size);
     }
   }
@@ -282,6 +300,28 @@ void *mm_malloc(size_t size)
  */
 void mm_free(void *ptr)
 {
+  if(!ptr || ((int)ptr%ALIGNMENT != 0)){
+    return;
+  }
+
+  block_node block = GET_HEADER(ptr);
+  block_node prev = GET_PREVIOUS_BLOCK(block);
+  block_node next;
+  if(IS_FREE(prev)){
+    size_t prev_size = GET_SIZE(prev);
+    prev_size += GET_SIZE(block) + BLOCK_HEADER_SIZE;
+    assert(GET_NEXT_BLOCK(prev) == block);
+    SET_SIZE(prev, prev_size | FREE_MASK);
+    if(block != END){
+      *next = prev;
+    }
+    block = prev;
+  }
+  if(block != END && IS_FREE(next = GET_NEXT_BLOCK(block))){
+    size_t block_size = GET_SIZE(block);
+    block_size += GET_SIZE(next) + BLOCK_HEADER_SIZE;
+    SET_SIZE(block, block_size | FREE_MASK);
+  }
   // //Check null pointer
   // if (!ptr){
   //   return
