@@ -56,9 +56,11 @@ team_t team = {
  * ie seglists. Chunk to powers of 2 seems reasonable.
  */
 typedef void * block_node;
+#define MAX(a, b) ((a >= b) ? a : b)
 #define BLOCK_HEADER_SIZE ALIGN((sizeof(block_node) + sizeof(size_t)))
+#define MIN_DATA_SIZE ALIGN(2*sizeof(block_node))
 
-#define GET_BLOCK_SIZE(size) (ALIGN((size) + BLOCK_HEADER_SIZE))
+#define GET_BLOCK_SIZE(size) (ALIGN(MAX(size, MIN_DATA_SIZE) + BLOCK_HEADER_SIZE))
 #define GET_HEADER(dataptr) ((block_node)((char*)dataptr - BLOCK_HEADER_SIZE))
 #define GET_DATA(blockptr) ((void*)((char*)blockptr + BLOCK_HEADER_SIZE))
 
@@ -66,7 +68,10 @@ typedef void * block_node;
 #define SET_PREVIOUS_BLOCK(blockPointer, previous) (GET_PREVIOUS_BLOCK(blockPointer) = (block_node)previous)
 #define GET_NEXT_BLOCK(currentBlock) (block_node)((char*)currentBlock + BLOCK_HEADER_SIZE + GET_SIZE(currentBlock))
 
-#define GET_NEXT_FREE_BLOCK(currentBlock, size) 0 // stub
+#define GET_NEXT_FREE_BLOCK(currentBlock) (*(block_node*)((char*)currentBlock + BLOCK_HEADER_SIZE))
+#define SET_NEXT_FREE_BLOCK(currentBlock, next) GET_NEXT_FREE_BLOCK(currentBlock) = next
+#define GET_PREVIOUS_FREE_BLOCK(currentBlock) (*(block_node*)((char*)currentBlock + BLOCK_HEADER_SIZE + sizeof(block_node))) // stub
+#define SET_PREVIOUS_FREE_BLOCK(currentBlock, prev) GET_PREVIOUS_FREE_BLOCK(currentBlock) = prev
 
 #define FREE_MASK (1<<(sizeof(size_t)*8 - 1))
 #define GET_MASKED_SIZE_POINTER(blockPointer) ((size_t*)((char*)blockPointer + sizeof(block_node)))
@@ -83,25 +88,6 @@ block_node BASE = NULL;
 block_node END = NULL;
 block_node LAST_CHECK = NULL;
 size_t LAST_CHECK_SIZE = 0;
-
-// Jeff McClintock running median eistimate
-float AVERAGE_REQUEST_SIZE = 0.0f;
-int NUM_REQUEST = 0;
-const int EARLY_POINTS = 16;
-const float STEP_SIZE = 0.0625f; // 1.0f / EARLY_POINTS
-void add_request(size_t size){
-  float s = (float)size;
-
-  // Since this takes time to converge, higher step size on early pts.
-  if(abs(s - AVERAGE_REQUEST_SIZE) > AVERAGE_REQUEST_SIZE) {
-    NUM_REQUEST = 0;
-  }
-  float step = (NUM_REQUEST < EARLY_POINTS) ? 1.0f / ((++NUM_REQUEST) % EARLY_POINTS) : STEP_SIZE;
-
-  AVERAGE_REQUEST_SIZE += (s - AVERAGE_REQUEST_SIZE) * step;
-
-  // printf("\tIN add_request, size: %d, average: %d, number: %d\n", size, AVERAGE_REQUEST_SIZE, NUM_REQUEST );
-}
 
 /*
  * returns non-zero if macros function properly
@@ -181,9 +167,14 @@ int macro_checker()
   // *(block_node*)testNode = (block_node)0xbee71e5;
   SET_PREVIOUS_BLOCK(testNode, 0xbee71e5);
   SET_SIZE(testNode, ALIGN(testNodeSize));
+  SET_FREE(testNode, 1);
+  SET_NEXT_FREE_BLOCK(testNode, 0xf00d);
+  SET_PREVIOUS_FREE_BLOCK(testNode, 0xba51c);
   // should properly find the next and previous blocks
   assert(GET_NEXT_BLOCK(testNode) == (char*)testNode + BLOCK_HEADER_SIZE + ALIGN(testNodeSize));
   assert(GET_PREVIOUS_BLOCK(testNode) == (block_node)0xbee71e5);
+  assert(GET_NEXT_FREE_BLOCK(testNode) == 0xf00d);
+  assert(GET_PREVIOUS_FREE_BLOCK(testNode) == 0xba51c);
 
   printf("Macros checked successfully!\n");
 
@@ -227,9 +218,17 @@ int mm_check(void)
       GET_NEXT_BLOCK(current),
       GET_PREVIOUS_BLOCK(current));
 
+    // Check alignment of previous pointers
+    if(last != GET_PREVIOUS_BLOCK(current)) {
+-      printf("Continuity error! %p doesn't pt to prev block %p, instead %p.\n", 
+        current, 
+        last, 
+        GET_PREVIOUS_BLOCK(current));
+      has_failed = 1;
+    }
+
     // Check contiguity of free space (with previous)
-    if(last == NULL) {
-    } else if(IS_FREE(last) & IS_FREE(current)) {
+    if(last && IS_FREE(last) & IS_FREE(current)) {
       printf("Free error! %p is not connected to its free predecessor. \n",
         current);
       has_failed = 1;
@@ -268,9 +267,6 @@ int mm_init(void)
   LAST_CHECK = NULL;
   LAST_CHECK_SIZE = 0;
 
-  AVERAGE_REQUEST_SIZE = 0.0f;
-  NUM_REQUEST = 0;
-
   #ifdef DEBUG
   #ifndef NDEBUG
     mm_check();
@@ -298,9 +294,9 @@ block_node find_free(size_t requestSize)
   // - No check has been made (ever)
   // - No check has been made since calling a free
   // - We are checking a smaller size than before.
-  if(LAST_CHECK == NULL || LAST_CHECK == BASE || requestSize < LAST_CHECK_SIZE) {
+  // if(LAST_CHECK == NULL || LAST_CHECK == BASE || requestSize < LAST_CHECK_SIZE) {
     LAST_CHECK = END;
-  }
+  // }
 
   requestSize = ALIGN(requestSize);
   // TODO why does this throw errors!
@@ -418,10 +414,6 @@ void *mm_malloc(size_t size)
   if (size <= 0) {
     return NULL;
   }
-
-  // Bookkeep average requests
-  // TODO saves time to not do this
-  // add_request(size);
 
   block_node block = NULL;
 
@@ -580,10 +572,10 @@ void *mm_realloc(void *ptr, size_t size)
 
   void* new_ptr;
   new_ptr = mm_malloc(size);
-  if(!new_ptr){
+  if(!new_ptr) {
     return NULL;
   }
-  memcpy(new_ptr, ptr, GET_SIZE(block));
+  memcpy(new_ptr, ptr, GET_SIZE(block)); // :(
   mm_free(ptr);
   return new_ptr;
 }
