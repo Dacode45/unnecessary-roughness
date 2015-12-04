@@ -205,8 +205,14 @@ int check_unique(block_node check)
  */
 int mm_check(void)
 {
-  int has_failed = 0;
+int has_failed = 0;
   printf("BASE: %p; END: %p\n", BASE, END);
+
+  for(size_t i = 0; i < FREE_LIST_COUNT; ++i) {
+    printf("FREE_LIST[%lu]: %p\n", 
+      i,
+      FREE_LIST[i]);
+  }
 
   block_node current = BASE;
   block_node last = NULL;
@@ -217,6 +223,12 @@ int mm_check(void)
       !!IS_FREE(current),
       GET_NEXT_BLOCK(current),
       GET_PREVIOUS_BLOCK(current));
+
+    if(IS_FREE(current)) {
+      printf("\t\tNEXTFREE: %p; PREVFREE: %p\n",
+        GET_NEXT_FREE_BLOCK(current),
+        GET_PREVIOUS_FREE_BLOCK(current));
+    }
 
     // Check alignment of previous pointers
     if(last != GET_PREVIOUS_BLOCK(current)) {
@@ -234,10 +246,34 @@ int mm_check(void)
       has_failed = 1;
     }
 
-    // TODO remove call from final code.
-    // sleep(1);
     last = current;
     current = GET_NEXT_BLOCK(current);
+  }
+
+  for(size_t i = 0; i < FREE_LIST_COUNT; ++i) {
+    current = FREE_LIST[i];
+    last = NULL;
+    while(current != NULL) {
+      printf("\tFREE[%lu]CCK: %p; NEXT: %p; PREV: %p\n",
+        i,
+        current,
+        GET_NEXT_FREE_BLOCK(current),
+        GET_PREVIOUS_FREE_BLOCK(current));
+
+      // Check for pointer alignment
+      if(last != GET_PREVIOUS_FREE_BLOCK(current)) {
+        printf("Continuity error! %p doesn't pt to prev block %p, instead %p.\n", 
+          current, 
+          last, 
+          GET_PREVIOUS_FREE_BLOCK(current));
+        has_failed = 1;
+      }
+
+      sleep(1);
+
+      last = current;
+      current = GET_NEXT_FREE_BLOCK(current);
+    }
   }
 
   if(!has_failed) {
