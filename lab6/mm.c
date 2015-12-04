@@ -204,18 +204,28 @@ int mm_check(void)
   block_node current = BASE;
   block_node last = NULL;
   while((current != NULL) && (last < END)) {
-    printf("\tCHECKING: %p; SIZE: %#lx; FREE: %d; NEXT: %p; PREVIOUS: %p\n", current, GET_SIZE(current), !!IS_FREE(current), GET_NEXT_BLOCK(current), GET_PREVIOUS_BLOCK(current));
+    printf("\tCHECKING: %p; SIZE: %#lx; FREE: %d; NEXT: %p; PREVIOUS: %p\n",
+      current, 
+      GET_SIZE(current), 
+      !!IS_FREE(current), 
+      GET_NEXT_BLOCK(current), 
+      GET_PREVIOUS_BLOCK(current));
 
     // Check contiguity of free space (with previous)
     if(last == NULL) {
     } else if(IS_FREE(last) & IS_FREE(current)) {
-      printf("Free error! %p is not connected to its free predecessor. \n", current);
+      printf("Free error! %p is not connected to its free predecessor. \n", 
+        current);
       has_failed = 1;
     }
 
     // Check alignment of previous pointers.
     if(last != GET_PREVIOUS_BLOCK(current)) {
-      printf("Continuity error! %p doesn't point to previous block (%p), instead %p.\n", current, last, GET_PREVIOUS_BLOCK(current));
+      printf("Continuity error!");
+      printf("%p doesn't point to previous block (%p), instead %p.\n", 
+        current, 
+        last, 
+        GET_PREVIOUS_BLOCK(current));
       has_failed = 1;
     }
 
@@ -270,10 +280,18 @@ int mm_init(void)
 //TODO add implment split
 //ALWAYS SPLIT
 block_node find_free(size_t request_size){
-  // // printf("\tIN find_free\n" );
-  request_size = ALIGN(request_size);
-  if(LAST_CHECK == NULL || LAST_CHECK == BASE || FREE_CALLED || request_size < LAST_CHECK_SIZE)
+  // printf("\tIN find_free\n" );
+
+  // We memoize a LAST_CHECK location so we don't have to repeatedly search
+  // the entire heap. However, we reset this in several circumstances:
+  // - No check has been made (ever)
+  // - No check has been made since calling a free
+  // - We are checking a smaller size than before.
+  if(LAST_CHECK == NULL || LAST_CHECK == BASE || FREE_CALLED || request_size < LAST_CHECK_SIZE) {
     LAST_CHECK = END;
+  }
+
+  request_size = ALIGN(request_size);
   LAST_CHECK_SIZE = request_size;
   FREE_CALLED = 0;
   size_t most_space = 0;
@@ -374,7 +392,8 @@ void *mm_malloc(size_t size)
   }
 
   // Bookkeep average requests
-  add_request(size);
+  // TODO saves time to not do this
+  // add_request(size);
 
   block_node block = NULL;
 
@@ -390,7 +409,9 @@ void *mm_malloc(size_t size)
   } else {
     assert((int)block % ALIGNMENT == 0);
 
-    if(GET_SIZE(block) > GET_BLOCK_SIZE(size) + GET_BLOCK_SIZE((int)AVERAGE_REQUEST_SIZE)) {
+    // TODO saves time not using AVERAGE_REQ_SIZE
+    // if(GET_SIZE(block) > GET_BLOCK_SIZE(size) + GET_BLOCK_SIZE((int)AVERAGE_REQUEST_SIZE)) {
+    if(GET_SIZE(block) > GET_BLOCK_SIZE(size)) {
       // printf("\tsplitting FREE Block, MARGIN: %lu, running average: %f \n", GET_SIZE(block)- GET_BLOCK_SIZE(size), AVERAGE_REQUEST_SIZE);
       block = split_block(block, size);
     }
@@ -424,11 +445,10 @@ void *mm_malloc(size_t size)
 void mm_free(void *ptr)
 {
   // printf("IN mm_free\n" );
-
   if(!ptr || ((int)ptr%ALIGNMENT != 0)){
     return;
   }
-  FREE_CALLED = 1;//need for find free
+  FREE_CALLED = 1; //need for find free
 
   block_node block = GET_HEADER(ptr);
   assert((int)block%8 == 0 );
