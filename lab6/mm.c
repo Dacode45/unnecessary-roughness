@@ -84,9 +84,6 @@ block_node END = NULL;
 block_node LAST_CHECK = NULL;
 size_t LAST_CHECK_SIZE = 0;
 
-// Flags
-int FREE_CALLED = 0;
-
 // Jeff McClintock running median eistimate
 float AVERAGE_REQUEST_SIZE = 0.0f;
 int NUM_REQUEST = 0;
@@ -194,6 +191,24 @@ int macro_checker()
 }
 
 /*
+ * Just a simple checker function to verify that no blocks
+ * are the same as a block_node check.
+ *
+ * Returns 1 on uniqueness.
+ *
+ */
+int check_unique(block_node check){
+  block_node current = END;
+  while(current != NULL) {
+    if (check == current){
+      return 0;
+    }
+    current = GET_PREVIOUS_BLOCK(current);
+  }
+  return 1;
+}
+
+/*
  * returns non-zero if heap is sensible.
  */
 int mm_check(void)
@@ -219,16 +234,6 @@ int mm_check(void)
       has_failed = 1;
     }
 
-    // Check alignment of previous pointers.
-    if(last != GET_PREVIOUS_BLOCK(current)) {
-      printf("Continuity error!");
-      printf("%p doesn't point to previous block (%p), instead %p.\n", 
-        current, 
-        last, 
-        GET_PREVIOUS_BLOCK(current));
-      has_failed = 1;
-    }
-
     // TODO remove call from final code.
     // sleep(1);
     last = current;
@@ -239,13 +244,13 @@ int mm_check(void)
     printf("Done mm_check!\n");
   } else {
     printf("!!!! Failed mm_check.\n");
+    exit(1);
   }
   return !has_failed;
 }
 
 /*
  * mm_init - initialize the malloc package.
- TODO check for multiple calls
  */
 int mm_init(void)
 {
@@ -262,8 +267,6 @@ int mm_init(void)
   LAST_CHECK = NULL;
   LAST_CHECK_SIZE = 0;
 
-  FREE_CALLED = 0;
-
   AVERAGE_REQUEST_SIZE = 0.0f;
   NUM_REQUEST = 0;
 
@@ -276,10 +279,16 @@ int mm_init(void)
   return 0;
 }
 
-//Go 1 past, and check the size of previous, best fit reduces fragmentation
-//TODO add implment split
-//ALWAYS SPLIT
-block_node find_free(size_t request_size){
+/*
+ * find_free finds a free block for your allocations!
+ * That's right! Pass it a size_t request_size and it will make
+ * all your dreams come true, finding the first available block
+ * that holds your data if one exists.
+ *
+ * Otherwise returns NULL. How sensible! 
+ *
+ */
+block_node find_free(size_t requestSize){
   // printf("\tIN find_free\n" );
 
   // We memoize a LAST_CHECK location so we don't have to repeatedly search
@@ -287,84 +296,92 @@ block_node find_free(size_t request_size){
   // - No check has been made (ever)
   // - No check has been made since calling a free
   // - We are checking a smaller size than before.
-  if(LAST_CHECK == NULL || LAST_CHECK == BASE || FREE_CALLED || request_size < LAST_CHECK_SIZE) {
+  if(LAST_CHECK == NULL || LAST_CHECK == BASE || requestSize < LAST_CHECK_SIZE) {
     LAST_CHECK = END;
   }
 
-  request_size = ALIGN(request_size);
-  LAST_CHECK_SIZE = request_size;
-  FREE_CALLED = 0;
-  size_t most_space = 0;
-
-  while( !IS_FREE(LAST_CHECK) || GET_SIZE(LAST_CHECK) < request_size){
-    //printf("\tCHECKING FREE BLOCKS: %p; SIZE Difference: %d; FREE: %d;\n", LAST_CHECK, GET_SIZE(LAST_CHECK) - request_size, !!IS_FREE(LAST_CHECK));
-    if (IS_FREE(LAST_CHECK) && GET_SIZE(LAST_CHECK) > most_space){
-      most_space = GET_SIZE(LAST_CHECK);
-    }
+  requestSize = ALIGN(requestSize);
+  // TODO why does this throw errors!
+  // LAST_CHECK_SIZE = requestSize;
+  LAST_CHECK_SIZE = 0;
+  
+  // Traverse backwards
+  // Choose first available.
+  while(!IS_FREE(LAST_CHECK) || GET_SIZE(LAST_CHECK) < requestSize) {
+    //printf("\tCHECKING FREE BLOCKS: %p; SIZE Difference: %d; FREE: %d;\n", LAST_CHECK, GET_SIZE(LAST_CHECK) - requestSize, !!IS_FREE(LAST_CHECK));
     if(LAST_CHECK == BASE){
-      // printf("\t\tNo Free BLOCK, MARGIN: %lu\n", most_space - request_size);
+      // printf("\t\tNo Free BLOCK, MARGIN: %lu\n", most_space - requestSize);
       return NULL;
     }
+
     LAST_CHECK = GET_PREVIOUS_BLOCK(LAST_CHECK);
   }
-  // printf("\t\tBLOCK: %p, IS FREE: %d, MARGIN: %lu\n", LAST_CHECK, !!IS_FREE(LAST_CHECK), GET_SIZE(LAST_CHECK) - request_size);
+  // printf("\t\tBLOCK: %p, IS FREE: %d, MARGIN: %lu\n", LAST_CHECK, !!IS_FREE(LAST_CHECK), GET_SIZE(LAST_CHECK) - requestSize);
 
   return LAST_CHECK;
-
 }
 
-int check_unique(block_node tocheck){
-  block_node current = END;
-  while(current != NULL) {
-    if (tocheck == current){
-      return 0;
-    }
-    current = GET_PREVIOUS_BLOCK(current);
-  }
-  return 1;
-}
-
-// //TODO add end of heap footer
-// //Always assume that if this function is called, block is at end of list
+/*
+ * Gotta get somewhere fast? And by that, I mean do you need space quickly?
+ * OK! Just tell us where the last block_node is, and the size you need, and
+ * we'll give you a new block. Fast.
+ * 
+ * Returns a pointer to the block if successful, NULL otherwise.
+ *
+ */
 block_node request_space(block_node last, size_t size){
   // printf("\tIN request_space LAST: %p\n", last );
-  block_node block;
-  block = mem_sbrk(0);
-  void * request = mem_sbrk(GET_BLOCK_SIZE(size));
-  if(request == (void *)-1)
+
+  block_node block = mem_sbrk(0);
+  void* request = mem_sbrk(GET_BLOCK_SIZE(size));
+
+  if(request == (void*)-1) {
     return NULL;
-  // printf("%p; %p; %p\n", block, request, mem_sbrk(0));
-  assert(check_unique(block)); //WHY DOES this fail.
-  assert(check_unique(request));
+  }
+
   assert(request != NULL);
-  assert((int)request %ALIGNMENT == 0);
-  if(last){
+  assert(check_unique(block));
+  assert(check_unique(request));
+  assert((unsigned long)request % ALIGNMENT == 0);
+
+  if(last) {
     SET_PREVIOUS_BLOCK(block, last);
   }
-  size = ALIGN(size);
-  SET_SIZE(block, size);
+  SET_SIZE(block, ALIGN(size));
   SET_FREE(block, 1);
   assert((int)block % ALIGNMENT == 0);
-  //*(block_node *)block = NULL; //next is null
-  //// printf("END: %p, BLOCK: %p\n",END, block );
+  // printf("END: %p, BLOCK: %p\n",END, block );
+  // TODO remove?
   END = block;
-  //// printf("END: %p\n", *(block_node*)END);
+  // printf("END: %p\n", *(block_node*)END);
   // printf("\t\tBLOCK: %p, IS GRANTED: \n",block );
 
   return block;
 }
 
-
+/*
+ * There comes a time in any block's life where it needs to be split.
+ * This can be a confusing and challenging experience, no matter whether
+ * you're a free block or an occupied block, big or small.
+ * 
+ * Luckily, we do this for you.  TODO
+ *
+ *
+ */
 block_node split_block(block_node block, size_t cutoff){
   // printf("\tIN split_block\n" );
+
   cutoff = ALIGN(cutoff);
+
   int isEnd = (block == END);
   block_node next_block = NULL;
-  if (!isEnd){
+  if (!isEnd) {
     next_block = GET_NEXT_BLOCK(block);
   }
+
   size_t old_size = GET_SIZE(block);
   SET_SIZE(block, cutoff);
+
   block_node s_block = GET_NEXT_BLOCK(block);
   SET_PREVIOUS_BLOCK(s_block, block);
   SET_FREE(s_block, 1);
@@ -448,10 +465,15 @@ void mm_free(void *ptr)
   if(!ptr || ((int)ptr%ALIGNMENT != 0)){
     return;
   }
-  FREE_CALLED = 1; //need for find free
 
   block_node block = GET_HEADER(ptr);
   assert((int)block%8 == 0 );
+
+  // Move the free-finder pointer back if it's ahead of our location
+  if(LAST_CHECK > block && LAST_CHECK_SIZE < GET_SIZE(block)) {
+    LAST_CHECK = NULL;
+  }
+
   SET_FREE(block, 1);
   // printf("\tFreeing BLOCK: %p\n", block);
 
