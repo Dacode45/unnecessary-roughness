@@ -287,7 +287,7 @@ int check_unique(block_node tocheck){
 // //TODO add end of heap footer
 // //Always assume that if this function is called, block is at end of list
 block_node request_space(block_node last, size_t size){
-  printf("IN request_space LAST: %p\n", last );
+  printf("IN request_space LAST: %p, SIZE: %d\n", last, size );
   block_node block;
   block = mem_sbrk(0);
   void * request = mem_sbrk(GET_BLOCK_SIZE(size));
@@ -371,7 +371,7 @@ void *mm_malloc(size_t size)
       //printf("FREE BLOCK");
       assert((int)block % ALIGNMENT == 0);
       //check split
-      if(GET_SIZE(block) > GET_BLOCK_SIZE(size) + GET_BLOCK_SIZE((int)AVERAGE_REQUEST_SIZE)){
+      if(GET_SIZE(block) > GET_BLOCK_SIZE(size) + GET_BLOCK_SIZE(AVERAGE_REQUEST_SIZE) ){
         printf("splitting FREE Block, MARGIN: %d, running average: %#lx \n", GET_SIZE(block)- GET_BLOCK_SIZE(size), AVERAGE_REQUEST_SIZE);
         block = split_block(block, size);
       }
