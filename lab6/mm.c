@@ -546,17 +546,33 @@ void mm_free(void *ptr)
  */
 void *mm_realloc(void *ptr, size_t size)
 {
-  // printf("IN mm_realloc\n" );
   if(!ptr) {
-    return malloc(size);
+    return mm_malloc(size);
   }
 
   block_node block = GET_HEADER(ptr);
-  if(GET_SIZE(block) >= size){
+  if(GET_SIZE(block) >= size) {
     return ptr;
   }
 
-  void * new_ptr;
+  // Can we coalesce happily?
+  block_node next = GET_NEXT_BLOCK(block);
+  if(IS_FREE(next)) {
+    assert(GET_PREVIOUS_BLOCK(next) == block);
+
+    size_t currentSize = GET_SIZE(block);
+    SET_SIZE(block, currentSize + GET_SIZE(next) + BLOCK_HEADER_SIZE);
+
+    if (next == END) {
+      END = block;
+    } else {
+      SET_PREVIOUS_BLOCK(GET_NEXT_BLOCK(next), block);
+    }
+
+    return ptr;
+  }
+
+  void* new_ptr;
   new_ptr = mm_malloc(size);
   if(!new_ptr){
     return NULL;
