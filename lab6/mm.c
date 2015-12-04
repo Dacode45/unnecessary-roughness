@@ -542,7 +542,8 @@ void mm_free(void *ptr)
 }
 
 /*
- * mm_realloc - Implemented simply in terms of mm_malloc and mm_free
+ * mm_realloc - Fairly dumb, tries to avoid reallocation by checking size
+ * and trying to coalesce first.
  */
 void *mm_realloc(void *ptr, size_t size)
 {
@@ -551,7 +552,8 @@ void *mm_realloc(void *ptr, size_t size)
   }
 
   block_node block = GET_HEADER(ptr);
-  if(GET_SIZE(block) >= size) {
+  size_t currentSize = GET_SIZE(block);
+  if(currentSize >= size) {
     return ptr;
   }
 
@@ -561,7 +563,7 @@ void *mm_realloc(void *ptr, size_t size)
     next = GET_NEXT_BLOCK(block);
   }
 
-  if(next && IS_FREE(next)) {
+  if(next && IS_FREE(next) && currentSize + GET_SIZE(next) >= size) {
     assert(GET_PREVIOUS_BLOCK(next) == block);
 
     size_t currentSize = GET_SIZE(block);
