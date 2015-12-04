@@ -69,9 +69,9 @@ typedef void * block_node;
 #define GET_NEXT_BLOCK(currentBlock) (block_node)((char*)currentBlock + BLOCK_HEADER_SIZE + GET_SIZE(currentBlock))
 
 #define GET_NEXT_FREE_BLOCK(currentBlock) (*(block_node*)((char*)currentBlock + BLOCK_HEADER_SIZE))
-#define SET_NEXT_FREE_BLOCK(currentBlock, next) GET_NEXT_FREE_BLOCK(currentBlock) = next
+#define SET_NEXT_FREE_BLOCK(currentBlock, next) (GET_NEXT_FREE_BLOCK(currentBlock) = (block_node)next)
 #define GET_PREVIOUS_FREE_BLOCK(currentBlock) (*(block_node*)((char*)currentBlock + BLOCK_HEADER_SIZE + sizeof(block_node))) // stub
-#define SET_PREVIOUS_FREE_BLOCK(currentBlock, prev) GET_PREVIOUS_FREE_BLOCK(currentBlock) = prev
+#define SET_PREVIOUS_FREE_BLOCK(currentBlock, prev) (GET_PREVIOUS_FREE_BLOCK(currentBlock) = (block_node)prev)
 
 #define FREE_MASK (1<<(sizeof(size_t)*8 - 1))
 #define GET_MASKED_SIZE_POINTER(blockPointer) ((size_t*)((char*)blockPointer + sizeof(block_node)))
@@ -86,8 +86,9 @@ typedef void * block_node;
  */
 block_node BASE = NULL;
 block_node END = NULL;
-block_node LAST_CHECK = NULL;
-size_t LAST_CHECK_SIZE = 0;
+
+const size_t FREE_LIST_COUNT = 5;
+block_node FREE_LIST[FREE_LIST_COUNT];
 
 /*
  * returns non-zero if macros function properly
@@ -164,7 +165,6 @@ int macro_checker()
    * Block traversal
    */
   // set up some dummy values (previous ptr and size)
-  // *(block_node*)testNode = (block_node)0xbee71e5;
   SET_PREVIOUS_BLOCK(testNode, 0xbee71e5);
   SET_SIZE(testNode, ALIGN(testNodeSize));
   SET_FREE(testNode, 1);
@@ -173,8 +173,8 @@ int macro_checker()
   // should properly find the next and previous blocks
   assert(GET_NEXT_BLOCK(testNode) == (char*)testNode + BLOCK_HEADER_SIZE + ALIGN(testNodeSize));
   assert(GET_PREVIOUS_BLOCK(testNode) == (block_node)0xbee71e5);
-  assert(GET_NEXT_FREE_BLOCK(testNode) == 0xf00d);
-  assert(GET_PREVIOUS_FREE_BLOCK(testNode) == 0xba51c);
+  assert(GET_NEXT_FREE_BLOCK(testNode) == (block_node)0xf00d);
+  assert(GET_PREVIOUS_FREE_BLOCK(testNode) == (block_node)0xba51c);
 
   printf("Macros checked successfully!\n");
 
@@ -220,7 +220,7 @@ int mm_check(void)
 
     // Check alignment of previous pointers
     if(last != GET_PREVIOUS_BLOCK(current)) {
--      printf("Continuity error! %p doesn't pt to prev block %p, instead %p.\n", 
+      printf("Continuity error! %p doesn't pt to prev block %p, instead %p.\n", 
         current, 
         last, 
         GET_PREVIOUS_BLOCK(current));
@@ -264,8 +264,10 @@ int mm_init(void)
 
   BASE = NULL;
   END = NULL;
-  LAST_CHECK = NULL;
-  LAST_CHECK_SIZE = 0;
+
+  for (size_t i = 0; i < FREE_LIST_COUNT; ++i) {
+    FREE_LIST[i] = NULL;
+  }
 
   #ifdef DEBUG
   #ifndef NDEBUG
@@ -287,21 +289,8 @@ int mm_init(void)
  */
 block_node find_free(size_t requestSize)
 {
-  // printf("\tIN find_free\n" );
-
-  // We memoize a LAST_CHECK location so we don't have to repeatedly search
-  // the entire heap. However, we reset this in several circumstances:
-  // - No check has been made (ever)
-  // - No check has been made since calling a free
-  // - We are checking a smaller size than before.
-  // if(LAST_CHECK == NULL || LAST_CHECK == BASE || requestSize < LAST_CHECK_SIZE) {
-    LAST_CHECK = END;
-  // }
-
+  block_node LAST_CHECK = END;
   requestSize = ALIGN(requestSize);
-  // TODO why does this throw errors!
-  // LAST_CHECK_SIZE = requestSize;
-  LAST_CHECK_SIZE = 0;
 
   // Traverse backwards
   // Choose first available.
@@ -329,7 +318,6 @@ block_node find_free(size_t requestSize)
  */
 block_node request_space(block_node last, size_t size)
 {
-
   // printf("\tIN request_space LAST: %p\n", last );
 
   block_node block = mem_sbrk(0);
@@ -351,7 +339,6 @@ block_node request_space(block_node last, size_t size)
   SET_FREE(block, 1);
   assert((int)block % ALIGNMENT == 0);
   // printf("END: %p, BLOCK: %p\n",END, block );
-  // TODO remove?
   END = block;
   // printf("END: %p\n", *(block_node*)END);
   // printf("\t\tBLOCK: %p, IS GRANTED: \n",block );
@@ -429,8 +416,7 @@ void *mm_malloc(size_t size)
   } else {
     assert((int)block % ALIGNMENT == 0);
 
-    // TODO saves time not using AVERAGE_REQ_SIZE
-    // if(GET_SIZE(block) > GET_BLOCK_SIZE(size) + GET_BLOCK_SIZE((int)AVERAGE_REQUEST_SIZE)) {
+    // TODO this size check needs to be based on size of each FREE_LIST
     if(GET_SIZE(block) > GET_BLOCK_SIZE(size)) {
       // printf("\tsplitting FREE Block, MARGIN: %lu, running average: %f \n", GET_SIZE(block)- GET_BLOCK_SIZE(size), AVERAGE_REQUEST_SIZE);
       block = split_block(block, size);
@@ -516,15 +502,6 @@ void mm_free(void *ptr)
     }
     // printf("\tBLOCK: %p, has been merged right into BLOCK: %p\n",block, next );
   }
-
-  // Move the free-finder pointer back if it's ahead of our location
-  // TODO this is buggy
-  // if(block != END && LAST_CHECK < block && LAST_CHECK_SIZE < GET_SIZE(block)) {
-    // printf("test");
-    LAST_CHECK = NULL;
-    // LAST_CHECK = GET_NEXT_BLOCK(block);
-    // printf("best %p\n", LAST_CHECK);
-  // }
 
   #ifdef DEBUG
   #ifndef NDEBUG
