@@ -555,9 +555,13 @@ void *mm_realloc(void *ptr, size_t size)
     return ptr;
   }
 
-  // Can we coalesce happily?
-  block_node next = GET_NEXT_BLOCK(block);
-  if(IS_FREE(next)) {
+  // Coallesce if possible :)
+  block_node next = NULL;
+  if(block != END) {
+    next = GET_NEXT_BLOCK(block);
+  }
+
+  if(next && IS_FREE(next)) {
     assert(GET_PREVIOUS_BLOCK(next) == block);
 
     size_t currentSize = GET_SIZE(block);
