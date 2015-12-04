@@ -545,6 +545,6 @@ void *mm_realloc(void *ptr, size_t size)
     return NULL;
   }
   memcpy(new_ptr, ptr, GET_SIZE(block));
-  mm_free(ptr);
+  free(ptr);
   return new_ptr;
 }

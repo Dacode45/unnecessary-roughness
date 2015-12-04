@@ -220,16 +220,16 @@ int mm_check(void)
   block_node last = NULL;
   while((current != NULL) && (last < END)) {
     printf("\tCHECKING: %p; SIZE: %#lx; FREE: %d; NEXT: %p; PREVIOUS: %p\n",
-      current,
-      GET_SIZE(current),
-      !!IS_FREE(current),
-      GET_NEXT_BLOCK(current),
+      current, 
+      GET_SIZE(current), 
+      !!IS_FREE(current), 
+      GET_NEXT_BLOCK(current), 
       GET_PREVIOUS_BLOCK(current));
 
     // Check contiguity of free space (with previous)
     if(last == NULL) {
     } else if(IS_FREE(last) & IS_FREE(current)) {
-      printf("Free error! %p is not connected to its free predecessor. \n",
+      printf("Free error! %p is not connected to its free predecessor. \n", 
         current);
       has_failed = 1;
     }
@@ -285,7 +285,7 @@ int mm_init(void)
  * all your dreams come true, finding the first available block
  * that holds your data if one exists.
  *
- * Otherwise returns NULL. How sensible!
+ * Otherwise returns NULL. How sensible! 
  *
  */
 block_node find_free(size_t requestSize){
@@ -304,7 +304,7 @@ block_node find_free(size_t requestSize){
   // TODO why does this throw errors!
   // LAST_CHECK_SIZE = requestSize;
   LAST_CHECK_SIZE = 0;
-
+  
   // Traverse backwards
   // Choose first available.
   while(!IS_FREE(LAST_CHECK) || GET_SIZE(LAST_CHECK) < requestSize) {
@@ -325,7 +325,7 @@ block_node find_free(size_t requestSize){
  * Gotta get somewhere fast? And by that, I mean do you need space quickly?
  * OK! Just tell us where the last block_node is, and the size you need, and
  * we'll give you a new block. Fast.
- *
+ * 
  * Returns a pointer to the block if successful, NULL otherwise.
  *
  */
@@ -364,7 +364,7 @@ block_node request_space(block_node last, size_t size){
  * There comes a time in any block's life where it needs to be split.
  * This can be a confusing and challenging experience, no matter whether
  * you're a free block or an occupied block, big or small.
- *
+ * 
  * Luckily, we do this for you.  TODO
  *
  *
@@ -538,6 +538,11 @@ void *mm_realloc(void *ptr, size_t size)
   if(GET_SIZE(block) >= size){
     return ptr;
   }
+  mm_free(ptr);
+  //check if coallesing did something
+  if(GET_SIZE(block) >= size){
+    return ptr;
+  }
 
   void * new_ptr;
   new_ptr = mm_malloc(size);
@@ -545,6 +550,5 @@ void *mm_realloc(void *ptr, size_t size)
     return NULL;
   }
   memcpy(new_ptr, ptr, GET_SIZE(block));
-  mm_free(ptr);
   return new_ptr;
 }
