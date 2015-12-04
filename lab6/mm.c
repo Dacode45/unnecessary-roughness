@@ -197,7 +197,8 @@ int macro_checker()
  * Returns 1 on uniqueness.
  *
  */
-int check_unique(block_node check){
+int check_unique(block_node check)
+{
   block_node current = END;
   while(current != NULL) {
     if (check == current){
@@ -288,7 +289,8 @@ int mm_init(void)
  * Otherwise returns NULL. How sensible!
  *
  */
-block_node find_free(size_t requestSize){
+block_node find_free(size_t requestSize)
+{
   // printf("\tIN find_free\n" );
 
   // We memoize a LAST_CHECK location so we don't have to repeatedly search
@@ -329,7 +331,8 @@ block_node find_free(size_t requestSize){
  * Returns a pointer to the block if successful, NULL otherwise.
  *
  */
-block_node request_space(block_node last, size_t size){
+block_node request_space(block_node last, size_t size)
+{
 
   // printf("\tIN request_space LAST: %p\n", last );
 
@@ -372,7 +375,8 @@ block_node request_space(block_node last, size_t size){
  * This function does NOT coallesce.
  *
  */
-block_node split_block(block_node block, size_t splitSize){
+block_node split_block(block_node block, size_t splitSize)
+{
   // printf("\tIN split_block\n" );
 
   assert(splitSize < GET_SIZE(block) + BLOCK_HEADER_SIZE);
@@ -543,7 +547,7 @@ void mm_free(void *ptr)
 void *mm_realloc(void *ptr, size_t size)
 {
   // printf("IN mm_realloc\n" );
-  if(!ptr){
+  if(!ptr) {
     return malloc(size);
   }
 
