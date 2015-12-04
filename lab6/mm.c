@@ -364,41 +364,47 @@ block_node request_space(block_node last, size_t size){
  * This can be a confusing and challenging experience, no matter whether
  * you're a free block or an occupied block, big or small.
  * 
- * Luckily, we do this for you.  TODO
- *
+ * Luckily, we do this for you. Splits a block in two, with a given splitSize
+ * for the first one. Puts the rest in a new block. Please don't call this
+ * on something too big.
+ * 
+ * This function does NOT coallesce.
  *
  */
-block_node split_block(block_node block, size_t cutoff){
+block_node split_block(block_node block, size_t splitSize){
   // printf("\tIN split_block\n" );
 
-  cutoff = ALIGN(cutoff);
+  assert(splitSize < GET_SIZE(block) + BLOCK_HEADER_SIZE);
+
+  splitSize = ALIGN(splitSize);
 
   int isEnd = (block == END);
-  block_node next_block = NULL;
+  block_node nextBlock = NULL;
   if (!isEnd) {
-    next_block = GET_NEXT_BLOCK(block);
+    nextBlock = GET_NEXT_BLOCK(block);
   }
 
-  size_t old_size = GET_SIZE(block);
-  SET_SIZE(block, cutoff);
+  size_t oldSize = GET_SIZE(block);
+  SET_SIZE(block, splitSize);
 
-  block_node s_block = GET_NEXT_BLOCK(block);
-  SET_PREVIOUS_BLOCK(s_block, block);
-  SET_FREE(s_block, 1);
-  SET_SIZE(s_block, old_size-cutoff-BLOCK_HEADER_SIZE);
+  // Make a new block
+  block_node splitBlock = GET_NEXT_BLOCK(block);
+  SET_PREVIOUS_BLOCK(splitBlock, block);
+  SET_FREE(splitBlock, 1);
+  SET_SIZE(splitBlock, oldSize - (splitSize + BLOCK_HEADER_SIZE));
 
   if(!isEnd){
-    SET_PREVIOUS_BLOCK(next_block, s_block);
-  }else{
-    END = s_block;
+    SET_PREVIOUS_BLOCK(nextBlock, splitBlock);
+  } else {
+    END = splitBlock;
   }
+
   // printf("\t\tBLOCK: %p, IS SPLIT INTO BLOCKS %p AND %p\n",block, block, s_block);
   return block;
 }
 
 /*
- * mm_malloc - Allocate a block by incrementing the brk pointer.
- *     Always allocate a block whose size is a multiple of the alignment.
+ * mm_malloc - A naive implicit-list approach.
  */
 void *mm_malloc(size_t size)
 {
@@ -456,64 +462,72 @@ void *mm_malloc(size_t size)
 }
 
 /*
- * mm_free - Freeing a block does nothing.
- Always merge free blocks
+ * mm_free - simple free with dual-directional coalescing!
  */
 void mm_free(void *ptr)
 {
   // printf("IN mm_free\n" );
-  if(!ptr || ((int)ptr%ALIGNMENT != 0)){
+
+  // We can't free nothing!
+  if(!ptr || ((unsigned long)ptr % ALIGNMENT != 0)){
     return;
   }
 
   block_node block = GET_HEADER(ptr);
-  assert((int)block%8 == 0 );
-
-  // Move the free-finder pointer back if it's ahead of our location
-  if(LAST_CHECK > block && LAST_CHECK_SIZE < GET_SIZE(block)) {
-    LAST_CHECK = NULL;
-  }
+  assert((unsigned long)block % 8 == 0);
 
   SET_FREE(block, 1);
   // printf("\tFreeing BLOCK: %p\n", block);
 
   block_node prev = NULL;
-  if(block != BASE)
+  if(block != BASE) {
     prev = GET_PREVIOUS_BLOCK(block);
-
-  block_node next= NULL;
-  if(block != END)
-    next = GET_NEXT_BLOCK(block);
-
-  if(block != BASE && prev && IS_FREE(prev)){
-    //double check that this previous block is actually adjacent
-    if(GET_NEXT_BLOCK(prev) == block){
-
-      size_t prev_size = GET_SIZE(prev);
-      prev_size += GET_SIZE(block) + BLOCK_HEADER_SIZE;
-      assert(GET_NEXT_BLOCK(prev) == block);
-      SET_SIZE(prev, prev_size);
-      if(block != END){
-        SET_PREVIOUS_BLOCK(next, prev);
-      }else{
-        END = prev;
-      }
-      // printf("\tBLOCK: %p, has been merged left into BLOCK: %p\n",block, prev );
-
-      block = prev;
-    }
   }
-  if(block != END && next && IS_FREE(next)){
-    size_t block_size = GET_SIZE(block);
-    block_size += GET_SIZE(next) + BLOCK_HEADER_SIZE;
-    SET_SIZE(block, block_size );
-    if (next == END){
+
+  block_node next = NULL;
+  if(block != END) {
+    next = GET_NEXT_BLOCK(block);
+  }
+
+  // Coalesce left
+  if(prev && IS_FREE(prev)){
+    assert(GET_NEXT_BLOCK(prev) == block);
+    
+    size_t prevSize = GET_SIZE(prev);
+    SET_SIZE(prev, prevSize + GET_SIZE(block) + BLOCK_HEADER_SIZE);
+
+    if(next) {
+      SET_PREVIOUS_BLOCK(next, prev);
+    } else {
+      END = prev;
+    }
+    // printf("\tBLOCK: %p, has been merged left into BLOCK: %p\n",block, prev );
+    block = prev;
+  }
+
+  // Coalesce right
+  if(next && IS_FREE(next)) {
+    assert(GET_PREVIOUS_BLOCK(next) == block);
+
+    size_t currentSize = GET_SIZE(block);
+    SET_SIZE(block, currentSize + GET_SIZE(next) + BLOCK_HEADER_SIZE);
+
+    if (next == END) {
       END = block;
-    }else{
+    } else {
       SET_PREVIOUS_BLOCK(GET_NEXT_BLOCK(next), block);
     }
     // printf("\tBLOCK: %p, has been merged right into BLOCK: %p\n",block, next );
   }
+
+  // Move the free-finder pointer back if it's ahead of our location
+  // TODO this is buggy
+  // if(block != END && LAST_CHECK < block && LAST_CHECK_SIZE < GET_SIZE(block)) {
+    // printf("test");
+    LAST_CHECK = NULL;
+    // LAST_CHECK = GET_NEXT_BLOCK(block);
+    // printf("best %p\n", LAST_CHECK);
+  // }
 
   #ifdef DEBUG
   #ifndef NDEBUG
