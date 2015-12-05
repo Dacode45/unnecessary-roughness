@@ -87,8 +87,71 @@ typedef void * block_node;
 block_node BASE = NULL;
 block_node END = NULL;
 
-const size_t FREE_LIST_COUNT = 5;
+//Let this be a power of two. aka MIN_BIN_SIZE = 2 means min bin size 2^2 or 4
+//Bins are [2^(i-1),i)
+#define MIN_BIN_SIZE 2
+#define FREE_LIST_COUNT 5
 block_node FREE_LIST[FREE_LIST_COUNT];
+//WE NEED to assign ends of list for edgecase
+
+//TODO integrate
+static inline void push_free(block_node block, int bin){
+
+  assert(bin >= 0 && bin < FREE_LIST_COUNT);
+  GET_NEXT_FREE_BLOCK(block);
+  assert(block != NULL);
+
+  SET_NEXT_FREE_BLOCK(block, FREE_LIST[bin]);
+  SET_PREVIOUS_FREE_BLOCK(block, NULL);
+  FREE_LIST[bin] = block;
+}
+//Remove block from middle of list, restructure the list.
+//NOTE must ensure that block isn't accidently added back
+//returns block
+static inline void remove_free(block_node block){
+  if(!IS_FREE(block)){
+    return;
+  }
+  block_node prev_block = GET_PREVIOUS_FREE_BLOCK(block);
+  block_node next_block = GET_NEXT_FREE_BLOCK(block);
+  if(next_block != NULL){
+    if(prev_block != NULL){
+      SET_NEXT_FREE_BLOCK(prev_block, next_block);
+      SET_PREVIOUS_FREE_BLOCK(next_block, prev_block);
+      return;
+    }
+    SET_PREVIOUS_FREE_BLOCK(next_block, NULL);
+    return;
+  }
+  if(prev_block != NULL){
+    SET_NEXT_FREE_BLOCK(prev_block, NULL);
+  }else{
+    FREE_LIST[get_bin(GET_SIZE(block))] = NULL;
+  }
+}
+
+static inline block_node pop_free(int bin){
+  assert(bin >= 0 && bin < FREE_LIST_COUNT);
+  block_node block= FREE_LIST[bin];
+  FREE_LIST[bin] = GET_NEXT_FREE_BLOCK(block);
+  if(FREE_LIST[bin]){
+    SET_PREVIOUS_FREE_BLOCK(FREE_LIST[bin], NULL);
+  }
+  return block;
+
+}
+
+int get_bin(size_t size){
+  int index;
+  int bin_size = 1 << MIN_BIN_SIZE;
+  for(index = 0; index < FREE_LIST_COUNT-1; index++ ){
+    if(size <= bin_size){
+      return index;
+    }
+    bin_size << 1;
+  }
+  return FREE_LIST_COUNT-1;
+}
 
 /*
  * returns non-zero if macros function properly
@@ -209,7 +272,7 @@ int has_failed = 0;
   printf("BASE: %p; END: %p\n", BASE, END);
 
   for(size_t i = 0; i < FREE_LIST_COUNT; ++i) {
-    printf("FREE_LIST[%lu]: %p\n", 
+    printf("FREE_LIST[%lu]: %p\n",
       i,
       FREE_LIST[i]);
   }
@@ -232,9 +295,9 @@ int has_failed = 0;
 
     // Check alignment of previous pointers
     if(last != GET_PREVIOUS_BLOCK(current)) {
-      printf("Continuity error! %p doesn't pt to prev block %p, instead %p.\n", 
-        current, 
-        last, 
+      printf("Continuity error! %p doesn't pt to prev block %p, instead %p.\n",
+        current,
+        last,
         GET_PREVIOUS_BLOCK(current));
       has_failed = 1;
     }
@@ -262,9 +325,9 @@ int has_failed = 0;
 
       // Check for pointer alignment
       if(last != GET_PREVIOUS_FREE_BLOCK(current)) {
-        printf("Continuity error! %p doesn't pt to prev block %p, instead %p.\n", 
-          current, 
-          last, 
+        printf("Continuity error! %p doesn't pt to prev block %p, instead %p.\n",
+          current,
+          last,
           GET_PREVIOUS_FREE_BLOCK(current));
         has_failed = 1;
       }
@@ -386,22 +449,23 @@ block_node request_space(block_node last, size_t size)
  * There comes a time in any block's life where it needs to be split.
  * This can be a confusing and challenging experience, no matter whether
  * you're a free block or an occupied block, big or small.
- * 
+ *
  * Luckily, we do this for you. Splits a block in two, with a given splitSize
  * for the first one. Puts the rest in a new block. Please don't call this
  * on something too big.
- * 
+ *
  * This function does NOT coallesce.
  *
  */
 block_node split_block(block_node block, size_t splitSize)
 {
   // printf("\tIN split_block\n" );
-
-  assert(splitSize < GET_SIZE(block) + BLOCK_HEADER_SIZE);
-
   splitSize = ALIGN(splitSize);
-
+  assert(splitSize < GET_SIZE(block) + BLOCK_HEADER_SIZE);
+  //don't split unless can fit
+  if(GET_SIZE(block) - splitSize < GET_BLOCK_SIZE(0)){
+    return;
+  }
   int isEnd = (block == END);
   block_node nextBlock = NULL;
   if (!isEnd) {
@@ -415,7 +479,8 @@ block_node split_block(block_node block, size_t splitSize)
   block_node splitBlock = GET_NEXT_BLOCK(block);
   SET_PREVIOUS_BLOCK(splitBlock, block);
   SET_FREE(splitBlock, 1);
-  SET_SIZE(splitBlock, oldSize - (splitSize + BLOCK_HEADER_SIZE));
+  size_t splitBlockSize = oldSize-(splitSize + BLOCK_HEADER_SIZE);
+  SET_SIZE(splitBlock, splitBlockSize);
 
   if(!isEnd){
     SET_PREVIOUS_BLOCK(nextBlock, splitBlock);
@@ -423,6 +488,9 @@ block_node split_block(block_node block, size_t splitSize)
     END = splitBlock;
   }
 
+  //Implement free list stuff
+  int bin = get_bin(splitBlockSize);
+  push_free(splitBlock, bin);
   // printf("\t\tBLOCK: %p, IS SPLIT INTO BLOCKS %p AND %p\n",block, block, s_block);
   return block;
 }
@@ -463,7 +531,14 @@ void *mm_malloc(size_t size)
     printf("ERROR! Could not allocate :(");
     return NULL;
   }
+  printf("\tCHECKING: %p; SIZE: %#lx; FREE: %d; NEXT: %p; PREVIOUS: %p\n",
+    block,
+    GET_SIZE(block),
+    !!IS_FREE(block),
+    GET_NEXT_BLOCK(block),
+    GET_PREVIOUS_BLOCK(block));
 
+  remove_free(block);
   SET_FREE(block, 0);
 
   if(!BASE) {
@@ -511,9 +586,10 @@ void mm_free(void *ptr)
   // Coalesce left
   if(prev && IS_FREE(prev)){
     assert(GET_NEXT_BLOCK(prev) == block);
-    
-    size_t prevSize = GET_SIZE(prev);
-    SET_SIZE(prev, prevSize + GET_SIZE(block) + BLOCK_HEADER_SIZE);
+
+    remove_free(prev);
+    size_t prevSize = GET_SIZE(prev) + GET_SIZE(block) + BLOCK_HEADER_SIZE;
+    SET_SIZE(prev, prevSize);
 
     if(next) {
       SET_PREVIOUS_BLOCK(next, prev);
@@ -521,6 +597,8 @@ void mm_free(void *ptr)
       END = prev;
     }
     // printf("\tBLOCK: %p, has been merged left into BLOCK: %p\n",block, prev );
+
+    //implement free list stuff
     block = prev;
   }
 
@@ -537,7 +615,24 @@ void mm_free(void *ptr)
       SET_PREVIOUS_BLOCK(GET_NEXT_BLOCK(next), block);
     }
     // printf("\tBLOCK: %p, has been merged right into BLOCK: %p\n",block, next );
+    //implement free list stuff
+    remove_free(next);
   }
+  //implement free list
+  printf("\tCHECKING free: %p; SIZE: %#lx; FREE: %d; NEXT: %p; PREVIOUS: %p\n",
+    block,
+    GET_SIZE(block),
+    !!IS_FREE(block),
+    GET_NEXT_FREE_BLOCK(block),
+    GET_PREVIOUS_FREE_BLOCK(block));
+
+  push_free(block, get_bin(GET_SIZE(block)));
+  printf("\tCHECKING free: %p; SIZE: %#lx; FREE: %d; NEXT: %p; PREVIOUS: %p\n",
+    block,
+    GET_SIZE(block),
+    !!IS_FREE(block),
+    GET_NEXT_FREE_BLOCK(block),
+    GET_PREVIOUS_FREE_BLOCK(block));
 
   #ifdef DEBUG
   #ifndef NDEBUG
