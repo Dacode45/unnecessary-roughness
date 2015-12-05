@@ -107,7 +107,7 @@ block_node END = NULL;
 // Our free lists store 2^i up to 2^(i+1),
 // so anything in bin i is going to be size s:
 // 2^i <= s < 2^(i+1)
-const size_t FREE_LIST_COUNT = 6;
+const size_t FREE_LIST_COUNT = 5;
 block_node FREE_LIST[FREE_LIST_COUNT];
 #define GET_FREE_LIST_NUMBER(size) (MIN(log2_32(size), FREE_LIST_COUNT - 1))
 
@@ -691,32 +691,32 @@ void *mm_realloc(void *ptr, size_t size)
     next = GET_NEXT_BLOCK(block);
   }
 
-  // if(next && IS_FREE(next) && currentSize + GET_SIZE(next) >= size) {
-  //   assert(GET_PREVIOUS_BLOCK(next) == block);
+  if(next && IS_FREE(next) && currentSize + GET_SIZE(next) >= size) {
+    assert(GET_PREVIOUS_BLOCK(next) == block);
 
-  //   size_t currentSize = GET_SIZE(block);
-  //   SET_SIZE(block, currentSize + GET_SIZE(next) + BLOCK_HEADER_SIZE);
+    size_t currentSize = GET_SIZE(block);
+    SET_SIZE(block, currentSize + GET_SIZE(next) + BLOCK_HEADER_SIZE);
 
-  //   block_node prevFree = GET_PREVIOUS_FREE_BLOCK(next);
-  //   block_node nextFree = GET_NEXT_FREE_BLOCK(next);
-  //   if(prevFree) {
-  //     SET_NEXT_FREE_BLOCK(prevFree, nextFree);
-  //   } else {
-  //     size_t power = GET_FREE_LIST_NUMBER(GET_SIZE(next));
-  //     FREE_LIST[power] = nextFree;      
-  //   }
-  //   if(nextFree) {
-  //     SET_PREVIOUS_FREE_BLOCK(nextFree, prevFree);
-  //   }
+    block_node prevFree = GET_PREVIOUS_FREE_BLOCK(next);
+    block_node nextFree = GET_NEXT_FREE_BLOCK(next);
+    if(prevFree) {
+      SET_NEXT_FREE_BLOCK(prevFree, nextFree);
+    } else {
+      size_t power = GET_FREE_LIST_NUMBER(GET_SIZE(next));
+      FREE_LIST[power] = nextFree;      
+    }
+    if(nextFree) {
+      SET_PREVIOUS_FREE_BLOCK(nextFree, prevFree);
+    }
 
-  //   if (next == END) {
-  //     END = block;
-  //   } else {
-  //     SET_PREVIOUS_BLOCK(GET_NEXT_BLOCK(next), block);
-  //   }
+    if (next == END) {
+      END = block;
+    } else {
+      SET_PREVIOUS_BLOCK(GET_NEXT_BLOCK(next), block);
+    }
 
-  //   return ptr;
-  // }
+    return ptr;
+  }
 
   void* new_ptr;
   new_ptr = mm_malloc(size);
