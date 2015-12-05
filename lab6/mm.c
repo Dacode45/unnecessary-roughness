@@ -107,7 +107,7 @@ block_node END = NULL;
 // Our free lists store 2^i up to 2^(i+1),
 // so anything in bin i is going to be size s:
 // 2^i <= s < 2^(i+1)
-const size_t FREE_LIST_COUNT = 3;
+const size_t FREE_LIST_COUNT = 6;
 block_node FREE_LIST[FREE_LIST_COUNT];
 #define GET_FREE_LIST_NUMBER(size) (MIN(log2_32(size), FREE_LIST_COUNT - 1))
 
