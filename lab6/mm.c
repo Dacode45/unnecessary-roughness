@@ -311,8 +311,6 @@ int has_failed = 0;
         has_failed = 1;
       }
 
-      // sleep(1);
-
       last = current;
       current = GET_NEXT_FREE_BLOCK(current);
     }
@@ -374,7 +372,6 @@ block_node find_free(size_t requestSize)
   // Be optimistic: maybe we can find it in the lower bin!
   block_node current = FREE_LIST[power];
   while(current != NULL) {
-    // printf("current: %p; thinks next is %p\n", current, GET_NEXT_FREE_BLOCK(current));
     if(GET_SIZE(current) >= requestSize) {
       return current;
     }
@@ -382,7 +379,7 @@ block_node find_free(size_t requestSize)
     current = GET_NEXT_FREE_BLOCK(current);
   }
 
-// printf("test\n");
+
   // Otherwise just search the upper bins and return.
   for(size_t i = power + 1; i < FREE_LIST_COUNT; ++i) {
     if(FREE_LIST[i]) {
@@ -442,8 +439,6 @@ block_node request_space(block_node last, size_t size)
  */
 block_node split_block(block_node block, size_t splitSize)
 {
-  // printf("\tIN split_block\n" );
-
   assert(splitSize < GET_SIZE(block) + BLOCK_HEADER_SIZE);
 
   splitSize = ALIGN(splitSize);
@@ -469,17 +464,14 @@ block_node split_block(block_node block, size_t splitSize)
     END = splitBlock;
   }
 
-  // printf("\t\tBLOCK: %p, IS SPLIT INTO BLOCKS %p AND %p\n",block, block, s_block);
   return block;
 }
 
 /*
- * mm_malloc - A naive implicit-list approach.
+ * mm_malloc - A segmented-list approach, with splitting!
  */
 void *mm_malloc(size_t size)
 {
-  // printf("IN mm_malloc, SIZE = %#lx\n", size );
-
   if (size <= 0) {
     return NULL;
   }
@@ -488,9 +480,7 @@ void *mm_malloc(size_t size)
 
   // If first call, don't bother checking for free block.
   if(BASE) {
-    // printf("--FREE[2]: %p\n", FREE_LIST[2]);
     block = find_free(size);
-    // printf("__FREE[2]: %p\n", FREE_LIST[2]);
   }
 
   // If no free block, request space.
@@ -518,9 +508,10 @@ void *mm_malloc(size_t size)
     if(next) {
       SET_PREVIOUS_FREE_BLOCK(next, prev);
     }
+
     // TODO this size check needs to be based on size of each FREE_LIST
+    // TODO REIMPLEMENT SPLITTING
     // if(GET_SIZE(block) > GET_BLOCK_SIZE(size)) {
-    //   // printf("\tsplitting FREE Block, MARGIN: %lu, running average: %f \n", GET_SIZE(block)- GET_BLOCK_SIZE(size), AVERAGE_REQUEST_SIZE);
     //   block = split_block(block, size);
     // }
   }
@@ -537,13 +528,11 @@ void *mm_malloc(size_t size)
     BASE = block;
   }
 
-  // printf("moooooo\n");
   #ifdef DEBUG
   #ifndef NDEBUG
     mm_check();
   #endif
   #endif
-    // printf("gag\n");
 
   return GET_DATA(block);
 }
@@ -553,8 +542,6 @@ void *mm_malloc(size_t size)
  */
 void mm_free(void *ptr)
 {
-  // printf("IN mm_free\n" );
-
   // We can't free nothing!
   if(!ptr || ((unsigned long)ptr % ALIGNMENT != 0)){
     return;
@@ -564,7 +551,6 @@ void mm_free(void *ptr)
   assert((unsigned long)block % 8 == 0);
 
   SET_FREE(block, 1);
-  // printf("\tFreeing BLOCK: %p\n", block);
 
   block_node prev = NULL;
   if(block != BASE) {
@@ -609,7 +595,7 @@ void mm_free(void *ptr)
     } else {
       END = prev;
     }
-    // printf("\tBLOCK: %p, has been merged left into BLOCK: %p; thinks NEXT: %p\n",block, prev, GET_NEXT_FREE_BLOCK(prev));
+
     block = prev;
   }
 
@@ -624,8 +610,6 @@ void mm_free(void *ptr)
     // from its list.
     block_node prevFree = GET_PREVIOUS_FREE_BLOCK(next);
     block_node nextFree = GET_NEXT_FREE_BLOCK(next);
-
-    // printf("previous: %p; next: %p\n", prevFree, nextFree);
 
     // If there's something before us, attach to what's after.
     // Otherwise, we must be at the head of something. Get rid of us.
@@ -642,16 +626,14 @@ void mm_free(void *ptr)
       SET_PREVIOUS_FREE_BLOCK(nextFree, prevFree);
     }
 
-
     if (next == END) {
       END = block;
     } else {
       SET_PREVIOUS_BLOCK(GET_NEXT_BLOCK(next), block);
     }
-    // printf("\tBLOCK: %p, has been merged right into BLOCK: %p\n",block, next );
   }
 
-  // Add node to tree
+  // Add node to free list.
   size_t power = GET_FREE_LIST_NUMBER(GET_SIZE(block));
   SET_NEXT_FREE_BLOCK(block, FREE_LIST[power]);
   SET_PREVIOUS_FREE_BLOCK(block, NULL);
@@ -660,13 +642,11 @@ void mm_free(void *ptr)
   }
   FREE_LIST[power] = block;
 
-  // printf("yeah\n");
   #ifdef DEBUG
   #ifndef NDEBUG
     mm_check();
   #endif
   #endif
-  // printf("nah\n");
 }
 
 /*
