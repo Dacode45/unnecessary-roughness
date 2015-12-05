@@ -7,6 +7,7 @@
  */
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <assert.h>
 #include <unistd.h>
 #include <math.h>
@@ -102,7 +103,7 @@ block_node END = NULL;
 // Our free lists store 2^i up to 2^(i+1),
 // so anything in bin i is going to be size s:
 // 2^i <= s < 2^(i+1)
-const size_t FREE_LIST_COUNT = 50;
+#define FREE_LIST_COUNT 50
 block_node FREE_LIST[FREE_LIST_COUNT];
 #define GET_FREE_LIST_NUMBER(size) (MIN(log2_32(size), FREE_LIST_COUNT - 1))
 
@@ -223,9 +224,9 @@ int mm_check(void)
 {
 int has_failed = 0;
   printf("BASE: %p; END: %p\n", BASE, END);
-
-  for(size_t i = 0; i < FREE_LIST_COUNT; ++i) {
-    printf("FREE_LIST[%lu]: %p\n", 
+  size_t i;
+  for( i = 0; i < FREE_LIST_COUNT; ++i) {
+    printf("FREE_LIST[%lu]: %p\n",
       i,
       FREE_LIST[i]);
   }
@@ -249,9 +250,9 @@ int has_failed = 0;
 
     // Check alignment of previous pointers
     if(last != GET_PREVIOUS_BLOCK(current)) {
-      printf("Continuity error! %p doesn't pt to prev block %p, instead %p.\n", 
-        current, 
-        last, 
+      printf("Continuity error! %p doesn't pt to prev block %p, instead %p.\n",
+        current,
+        last,
         GET_PREVIOUS_BLOCK(current));
       has_failed = 1;
     }
@@ -277,7 +278,7 @@ int has_failed = 0;
           current,
           power);
 
-        printf("Would have NEXTFREE: %p; PREVFREE: %p\n", 
+        printf("Would have NEXTFREE: %p; PREVFREE: %p\n",
           GET_NEXT_FREE_BLOCK(current), GET_PREVIOUS_FREE_BLOCK(current));
         has_failed = 1;
       }
@@ -286,8 +287,7 @@ int has_failed = 0;
     last = current;
     current = GET_NEXT_BLOCK(current);
   }
-
-  for(size_t i = 0; i < FREE_LIST_COUNT; ++i) {
+  for( i = 0; i < FREE_LIST_COUNT; ++i) {
     current = FREE_LIST[i];
     last = NULL;
     while(current != NULL) {
@@ -299,9 +299,9 @@ int has_failed = 0;
 
       // Check for pointer alignment
       if(last != GET_PREVIOUS_FREE_BLOCK(current)) {
-        printf("Continuity error! %p doesn't pt to prev block %p, instead %p.\n", 
-          current, 
-          last, 
+        printf("Continuity error! %p doesn't pt to prev block %p, instead %p.\n",
+          current,
+          last,
           GET_PREVIOUS_FREE_BLOCK(current));
         has_failed = 1;
       }
@@ -335,8 +335,8 @@ int mm_init(void)
 
   BASE = NULL;
   END = NULL;
-
-  for (size_t i = 0; i < FREE_LIST_COUNT; ++i) {
+  size_t i;
+  for (i = 0; i < FREE_LIST_COUNT; ++i) {
     FREE_LIST[i] = NULL;
   }
 
@@ -376,7 +376,8 @@ block_node find_free(size_t requestSize)
 
 
   // Otherwise just search the upper bins and return.
-  for(size_t i = power + 1; i < FREE_LIST_COUNT; ++i) {
+  size_t i;
+  for(i = power + 1; i < FREE_LIST_COUNT; ++i) {
     if(FREE_LIST[i]) {
       return FREE_LIST[i];
     }
@@ -424,20 +425,24 @@ block_node request_space(block_node last, size_t size)
  * There comes a time in any block's life where it needs to be split.
  * This can be a confusing and challenging experience, no matter whether
  * you're a free block or an occupied block, big or small.
- * 
+ *
  * Luckily, we do this for you. Splits a block in two, with a given splitSize
  * for the first one. Puts the rest in a new block. Please don't call this
  * on something too big.
- * 
+ *
  * This function does NOT coallesce.
  *
  */
+
 block_node split_block(block_node block, size_t splitSize)
 {
   assert(splitSize < GET_SIZE(block) + BLOCK_HEADER_SIZE);
 
   splitSize = ALIGN(splitSize);
-
+  //Split if you can handle it
+  if(GET_SIZE(block) - splitSize < GET_BLOCK_SIZE(0)){
+    return block;
+  }
   int isEnd = (block == END);
   block_node nextBlock = NULL;
   if (!isEnd) {
@@ -452,12 +457,22 @@ block_node split_block(block_node block, size_t splitSize)
   SET_PREVIOUS_BLOCK(splitBlock, block);
   SET_FREE(splitBlock, 1);
   SET_SIZE(splitBlock, oldSize - (splitSize + BLOCK_HEADER_SIZE));
-
   if(!isEnd){
     SET_PREVIOUS_BLOCK(nextBlock, splitBlock);
   } else {
     END = splitBlock;
   }
+
+//  printf("IN Spit, BLOCK: %p, SIZE: %x, SPLIT: %p, SIZE: %x, NEXT: %p\n", block, GET_SIZE(block), splitBlock, GET_SIZE(splitBlock), GET_NEXT_BLOCK(splitBlock) );
+
+  //add node to free list
+  size_t power = GET_FREE_LIST_NUMBER(GET_SIZE(splitBlock));
+  SET_NEXT_FREE_BLOCK(splitBlock, FREE_LIST[power]);
+  SET_PREVIOUS_FREE_BLOCK(splitBlock, NULL);
+  if(FREE_LIST[power]){
+    SET_PREVIOUS_FREE_BLOCK(FREE_LIST[power], splitBlock);
+  }
+  FREE_LIST[power] = splitBlock;
 
   return block;
 }
@@ -506,9 +521,9 @@ void *mm_malloc(size_t size)
 
     // TODO this size check needs to be based on size of each FREE_LIST
     // TODO REIMPLEMENT SPLITTING
-    // if(GET_SIZE(block) > GET_BLOCK_SIZE(size)) {
-    //   block = split_block(block, size);
-    // }
+    if(GET_SIZE(block) > GET_BLOCK_SIZE(size)) {
+      block = split_block(block, size);
+    }
   }
 
   if(!block) {
@@ -560,7 +575,7 @@ void mm_free(void *ptr)
   // Coalesce left
   if(prev && IS_FREE(prev)){
     assert(GET_NEXT_BLOCK(prev) == block);
-    
+
     size_t prevSize = GET_SIZE(prev);
     SET_SIZE(prev, prevSize + GET_SIZE(block) + BLOCK_HEADER_SIZE);
 
@@ -613,7 +628,7 @@ void mm_free(void *ptr)
     } else {
       size_t power = GET_FREE_LIST_NUMBER(GET_SIZE(next));
       assert(FREE_LIST[power] == next);
-      FREE_LIST[power] = nextFree;      
+      FREE_LIST[power] = nextFree;
     }
 
     // If we have a next node, connect to what was before us.
@@ -678,7 +693,7 @@ void *mm_realloc(void *ptr, size_t size)
       SET_NEXT_FREE_BLOCK(prevFree, nextFree);
     } else {
       size_t power = GET_FREE_LIST_NUMBER(GET_SIZE(next));
-      FREE_LIST[power] = nextFree;      
+      FREE_LIST[power] = nextFree;
     }
     if(nextFree) {
       SET_PREVIOUS_FREE_BLOCK(nextFree, prevFree);
