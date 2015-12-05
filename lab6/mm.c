@@ -57,6 +57,23 @@ team_t team = {
  */
 typedef void * block_node;
 #define MAX(a, b) ((a >= b) ? a : b)
+#define MIN(a, b) ((a <= b) ? a : b)
+// http://stackoverflow.com/questions/11376288/fast-computing-of-log2-for-64-bit-integers
+const int tab32[32] = {
+     0,  9,  1, 10, 13, 21,  2, 29,
+    11, 14, 16, 18, 22, 25,  3, 30,
+     8, 12, 20, 28, 15, 17, 24,  7,
+    19, 27, 23,  6, 26,  5,  4, 31 };
+static inline int log2_32(uint32_t value)
+{
+    value |= value >> 1;
+    value |= value >> 2;
+    value |= value >> 4;
+    value |= value >> 8;
+    value |= value >> 16;
+    return tab32[(uint32_t)(value*0x07C4ACDD) >> 27];
+}
+
 #define BLOCK_HEADER_SIZE ALIGN((sizeof(block_node) + sizeof(size_t)))
 #define MIN_DATA_SIZE ALIGN(2*sizeof(block_node))
 
@@ -87,8 +104,12 @@ typedef void * block_node;
 block_node BASE = NULL;
 block_node END = NULL;
 
-const size_t FREE_LIST_COUNT = 5;
+// Our free lists store 2^i up to 2^(i+1),
+// so anything in bin i is going to be size s:
+// 2^i <= s < 2^(i+1)
+const size_t FREE_LIST_COUNT = 3;
 block_node FREE_LIST[FREE_LIST_COUNT];
+#define GET_FREE_LIST_NUMBER(size) (MIN(log2_32(size), FREE_LIST_COUNT - 1))
 
 /*
  * returns non-zero if macros function properly
@@ -225,7 +246,8 @@ int has_failed = 0;
       GET_PREVIOUS_BLOCK(current));
 
     if(IS_FREE(current)) {
-      printf("\t\tNEXTFREE: %p; PREVFREE: %p\n",
+      printf("\t\tPOWER: %lu; NEXTFREE: %p; PREVFREE: %p\n",
+        GET_FREE_LIST_NUMBER(GET_SIZE(current)),
         GET_NEXT_FREE_BLOCK(current),
         GET_PREVIOUS_FREE_BLOCK(current));
     }
@@ -244,6 +266,23 @@ int has_failed = 0;
       printf("Free error! %p is not connected to its free predecessor. \n",
         current);
       has_failed = 1;
+    }
+
+    // Make sure we're in the free list!
+    if(IS_FREE(current)) {
+      size_t power = GET_FREE_LIST_NUMBER(GET_SIZE(current));
+
+      block_node node = FREE_LIST[power];
+      while(node != NULL && node != current) {
+        node = GET_NEXT_FREE_BLOCK(node);
+      }
+
+      if(!node) {
+        printf("Free list error! %p is not in free list %lu \n",
+        current,
+        power);
+        has_failed = 1;
+      }
     }
 
     last = current;
@@ -269,7 +308,7 @@ int has_failed = 0;
         has_failed = 1;
       }
 
-      sleep(1);
+      // sleep(1);
 
       last = current;
       current = GET_NEXT_FREE_BLOCK(current);
@@ -325,23 +364,45 @@ int mm_init(void)
  */
 block_node find_free(size_t requestSize)
 {
-  block_node LAST_CHECK = END;
   requestSize = ALIGN(requestSize);
 
-  // Traverse backwards
-  // Choose first available.
-  while(!IS_FREE(LAST_CHECK) || GET_SIZE(LAST_CHECK) < requestSize) {
-    //printf("\tCHECKING FREE BLOCKS: %p; SIZE Difference: %d; FREE: %d;\n", LAST_CHECK, GET_SIZE(LAST_CHECK) - requestSize, !!IS_FREE(LAST_CHECK));
-    if(LAST_CHECK == BASE){
-      // printf("\t\tNo Free BLOCK, MARGIN: %lu\n", most_space - requestSize);
-      return NULL;
+  // Round up the size to a power of 2.
+  int power = GET_FREE_LIST_NUMBER(requestSize);
+  // Be optimistic: maybe we can find it in the lower bin!
+  block_node current = FREE_LIST[power];
+  while(current != NULL) {
+    printf("current: %p; thinks next is %p\n", current, GET_NEXT_FREE_BLOCK(current));
+    if(GET_SIZE(current) >= requestSize) {
+      FREE_LIST[power] = GET_NEXT_FREE_BLOCK(current);
+      if(FREE_LIST[power]) {
+        SET_PREVIOUS_FREE_BLOCK(FREE_LIST[power], NULL);
+      }
+
+      // Null out for safety
+      SET_NEXT_FREE_BLOCK(current, NULL);
+      return current;
     }
 
-    LAST_CHECK = GET_PREVIOUS_BLOCK(LAST_CHECK);
+    current = GET_NEXT_FREE_BLOCK(current);
   }
-  // printf("\t\tBLOCK: %p, IS FREE: %d, MARGIN: %lu\n", LAST_CHECK, !!IS_FREE(LAST_CHECK), GET_SIZE(LAST_CHECK) - requestSize);
 
-  return LAST_CHECK;
+// printf("test\n");
+  // Otherwise just search the upper bins and return.
+  for(size_t i = power + 1; i < FREE_LIST_COUNT; ++i) {
+    if(FREE_LIST[i]) {
+      block_node rtn = FREE_LIST[i];
+      FREE_LIST[i] = GET_NEXT_FREE_BLOCK(rtn);
+      if(FREE_LIST[i]) {
+        SET_PREVIOUS_FREE_BLOCK(FREE_LIST[i], NULL);
+      }
+
+      // Null out for safety
+      SET_NEXT_FREE_BLOCK(rtn, NULL);
+      return rtn;
+    }
+  }
+
+  return NULL;
 }
 
 /*
@@ -354,8 +415,6 @@ block_node find_free(size_t requestSize)
  */
 block_node request_space(block_node last, size_t size)
 {
-  // printf("\tIN request_space LAST: %p\n", last );
-
   block_node block = mem_sbrk(0);
   void* request = mem_sbrk(GET_BLOCK_SIZE(size));
 
@@ -374,10 +433,9 @@ block_node request_space(block_node last, size_t size)
   SET_SIZE(block, ALIGN(size));
   SET_FREE(block, 1);
   assert((int)block % ALIGNMENT == 0);
-  // printf("END: %p, BLOCK: %p\n",END, block );
+
+  // Bookkeeping
   END = block;
-  // printf("END: %p\n", *(block_node*)END);
-  // printf("\t\tBLOCK: %p, IS GRANTED: \n",block );
 
   return block;
 }
@@ -432,7 +490,7 @@ block_node split_block(block_node block, size_t splitSize)
  */
 void *mm_malloc(size_t size)
 {
-  // printf("IN mm_malloc, SIZE = %#lx\n", size );
+  printf("IN mm_malloc, SIZE = %#lx\n", size );
 
   if (size <= 0) {
     return NULL;
@@ -442,7 +500,9 @@ void *mm_malloc(size_t size)
 
   // If first call, don't bother checking for free block.
   if(BASE) {
+    printf("--FREE[2]: %p\n", FREE_LIST[2]);
     block = find_free(size);
+    printf("__FREE[2]: %p\n", FREE_LIST[2]);
   }
 
   // If no free block, request space.
@@ -453,10 +513,10 @@ void *mm_malloc(size_t size)
     assert((int)block % ALIGNMENT == 0);
 
     // TODO this size check needs to be based on size of each FREE_LIST
-    if(GET_SIZE(block) > GET_BLOCK_SIZE(size)) {
-      // printf("\tsplitting FREE Block, MARGIN: %lu, running average: %f \n", GET_SIZE(block)- GET_BLOCK_SIZE(size), AVERAGE_REQUEST_SIZE);
-      block = split_block(block, size);
-    }
+    // if(GET_SIZE(block) > GET_BLOCK_SIZE(size)) {
+    //   // printf("\tsplitting FREE Block, MARGIN: %lu, running average: %f \n", GET_SIZE(block)- GET_BLOCK_SIZE(size), AVERAGE_REQUEST_SIZE);
+    //   block = split_block(block, size);
+    // }
   }
 
   if(!block) {
@@ -465,17 +525,23 @@ void *mm_malloc(size_t size)
   }
 
   SET_FREE(block, 0);
+  // FREE_LIST[power] = GET_NEXT_FREE_BLOCK(block);
+  // if(GET_NEXT_FREE_BLOCK(block)) {
+  //   SET_PREVIOUS_FREE_BLOCK(GET_NEXT_FREE_BLOCK(block), NULL);
+  // }
+  SET_NEXT_FREE_BLOCK(block, NULL);
 
   if(!BASE) {
     BASE = block;
   }
 
-  // printf("\tBLOCK: %p, IS MALLOC\n",block);
+  // printf("moooooo\n");
   #ifdef DEBUG
   #ifndef NDEBUG
     mm_check();
   #endif
   #endif
+    // printf("gag\n");
 
   return GET_DATA(block);
 }
@@ -485,7 +551,7 @@ void *mm_malloc(size_t size)
  */
 void mm_free(void *ptr)
 {
-  // printf("IN mm_free\n" );
+  printf("IN mm_free\n" );
 
   // We can't free nothing!
   if(!ptr || ((unsigned long)ptr % ALIGNMENT != 0)){
@@ -515,12 +581,33 @@ void mm_free(void *ptr)
     size_t prevSize = GET_SIZE(prev);
     SET_SIZE(prev, prevSize + GET_SIZE(block) + BLOCK_HEADER_SIZE);
 
+    // If we're coallescing left, we need to tear out the previous's
+    // connections and graft them together.
+    block_node prevFree = GET_PREVIOUS_FREE_BLOCK(prev);
+    block_node nextFree = GET_NEXT_FREE_BLOCK(prev);
+
+    // If there's a previous node in the list, make it think it was attached
+    // to the next node all along.
+    // Otherwise, we must be at the head of the list! Get rid of that nonsense
+    if(prevFree) {
+      SET_NEXT_FREE_BLOCK(prevFree, nextFree);
+    } else {
+      size_t power = GET_FREE_LIST_NUMBER(prevSize);
+      assert(FREE_LIST[power] == prev);
+      FREE_LIST[power] = nextFree;
+    }
+    // Now, tell the next node to be connected to whatever was before us in
+    // the list
+    if(nextFree) {
+      SET_PREVIOUS_FREE_BLOCK(nextFree, prevFree);
+    }
+
     if(next) {
       SET_PREVIOUS_BLOCK(next, prev);
     } else {
       END = prev;
     }
-    // printf("\tBLOCK: %p, has been merged left into BLOCK: %p\n",block, prev );
+    printf("\tBLOCK: %p, has been merged left into BLOCK: %p; thinks NEXT: %p\n",block, prev, GET_NEXT_FREE_BLOCK(prev));
     block = prev;
   }
 
@@ -531,19 +618,62 @@ void mm_free(void *ptr)
     size_t currentSize = GET_SIZE(block);
     SET_SIZE(block, currentSize + GET_SIZE(next) + BLOCK_HEADER_SIZE);
 
+    // If we coallesce right, the right-side block needs to be removed
+    // from its list.
+    block_node prevFree = GET_PREVIOUS_FREE_BLOCK(next);
+    block_node nextFree = GET_NEXT_FREE_BLOCK(next);
+
+    // printf("previous: %p; next: %p\n", prevFree, nextFree);
+
+    // If there's something before us, attach to what's after.
+    // Otherwise, we must be at the head of something. Get rid of us.
+    if(prevFree) {
+      SET_NEXT_FREE_BLOCK(prevFree, nextFree);
+    } else {
+      size_t power = GET_FREE_LIST_NUMBER(GET_SIZE(next));
+      assert(FREE_LIST[power] == next);
+      FREE_LIST[power] = nextFree;      
+    }
+
+    // If we have a next node, connect to what was before us.
+    if(nextFree) {
+      SET_PREVIOUS_FREE_BLOCK(nextFree, prevFree);
+    }
+
+    // if(prevFree) {
+    //   SET_NEXT_FREE_BLOCK(prevFree, nextFree);
+    // } else {
+    //   size_t power = GET_FREE_LIST_NUMBER(GET_SIZE(next));
+    //   FREE_LIST[power] = nextFree;      
+    // }
+    // if(nextFree) {
+    //   SET_PREVIOUS_FREE_BLOCK(nextFree, prevFree);
+    // }
+
     if (next == END) {
       END = block;
     } else {
       SET_PREVIOUS_BLOCK(GET_NEXT_BLOCK(next), block);
     }
-    // printf("\tBLOCK: %p, has been merged right into BLOCK: %p\n",block, next );
+    printf("\tBLOCK: %p, has been merged right into BLOCK: %p\n",block, next );
   }
 
+  // Add node to tree
+  size_t power = GET_FREE_LIST_NUMBER(GET_SIZE(block));
+  SET_NEXT_FREE_BLOCK(block, FREE_LIST[power]);
+  SET_PREVIOUS_FREE_BLOCK(block, NULL);
+  if(FREE_LIST[power]) {
+    SET_PREVIOUS_FREE_BLOCK(FREE_LIST[power], block);
+  }
+  FREE_LIST[power] = block;
+
+  // printf("yeah\n");
   #ifdef DEBUG
   #ifndef NDEBUG
     mm_check();
   #endif
   #endif
+  // printf("nah\n");
 }
 
 /*
@@ -568,20 +698,32 @@ void *mm_realloc(void *ptr, size_t size)
     next = GET_NEXT_BLOCK(block);
   }
 
-  if(next && IS_FREE(next) && currentSize + GET_SIZE(next) >= size) {
-    assert(GET_PREVIOUS_BLOCK(next) == block);
+  // if(next && IS_FREE(next) && currentSize + GET_SIZE(next) >= size) {
+  //   assert(GET_PREVIOUS_BLOCK(next) == block);
 
-    size_t currentSize = GET_SIZE(block);
-    SET_SIZE(block, currentSize + GET_SIZE(next) + BLOCK_HEADER_SIZE);
+  //   size_t currentSize = GET_SIZE(block);
+  //   SET_SIZE(block, currentSize + GET_SIZE(next) + BLOCK_HEADER_SIZE);
 
-    if (next == END) {
-      END = block;
-    } else {
-      SET_PREVIOUS_BLOCK(GET_NEXT_BLOCK(next), block);
-    }
+  //   block_node prevFree = GET_PREVIOUS_FREE_BLOCK(next);
+  //   block_node nextFree = GET_NEXT_FREE_BLOCK(next);
+  //   if(prevFree) {
+  //     SET_NEXT_FREE_BLOCK(prevFree, nextFree);
+  //   } else {
+  //     size_t power = GET_FREE_LIST_NUMBER(GET_SIZE(next));
+  //     FREE_LIST[power] = nextFree;      
+  //   }
+  //   if(nextFree) {
+  //     SET_PREVIOUS_FREE_BLOCK(nextFree, prevFree);
+  //   }
 
-    return ptr;
-  }
+  //   if (next == END) {
+  //     END = block;
+  //   } else {
+  //     SET_PREVIOUS_BLOCK(GET_NEXT_BLOCK(next), block);
+  //   }
+
+  //   return ptr;
+  // }
 
   void* new_ptr;
   new_ptr = mm_malloc(size);
