@@ -1,8 +1,17 @@
 /*
  * mm.c - The fastest, least memory-efficient malloc package.
  *
- * We use a simple implicit list solution atm.
- * Propably will transform to seglist.
+ * We use a simple implicit list solution for coallessing. All blocks have a pointer to the previous block (or nil) and the size of the block followed by the data.
+ * When free is called, this implicit list is able to find adjacent free blocks and combine, while maintaining the implicit list structure.
+ * In addition, we implement segmented explicit list on free in the data part of every block.
+ * On free the previous and next pointers of blocks in that blocks size class are written to the data segment.
+ * Size classes are powers of 2. They can be though of as bins where any block of size [2^i, 2^i+1) fits.
+ * The final size class is all numbers up to infinty
+ * On malloc, the free list of the nearest requested size is accessed, and a block is searched for.
+ * If no block can be found then the heap is extended and that block is returned.
+ * If a block is found, it is split if possible, and reomved from the free list.
+ * At this point the explicit list is garbage, but the implicit list always remains valid.
+ * The block is then returned.
  *
  */
 #include <stdio.h>
@@ -103,7 +112,7 @@ block_node END = NULL;
 // Our free lists store 2^i up to 2^(i+1),
 // so anything in bin i is going to be size s:
 // 2^i <= s < 2^(i+1)
-#define FREE_LIST_COUNT 50
+#define FREE_LIST_COUNT 20
 block_node FREE_LIST[FREE_LIST_COUNT];
 #define GET_FREE_LIST_NUMBER(size) (MIN(log2_32(size), FREE_LIST_COUNT - 1))
 
@@ -519,8 +528,6 @@ void *mm_malloc(size_t size)
       SET_PREVIOUS_FREE_BLOCK(next, prev);
     }
 
-    // TODO this size check needs to be based on size of each FREE_LIST
-    // TODO REIMPLEMENT SPLITTING
     if(GET_SIZE(block) > GET_BLOCK_SIZE(size)) {
       block = split_block(block, size);
     }
