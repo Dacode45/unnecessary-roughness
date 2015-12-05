@@ -107,7 +107,7 @@ block_node END = NULL;
 // Our free lists store 2^i up to 2^(i+1),
 // so anything in bin i is going to be size s:
 // 2^i <= s < 2^(i+1)
-const size_t FREE_LIST_COUNT = 5;
+const size_t FREE_LIST_COUNT = 50;
 block_node FREE_LIST[FREE_LIST_COUNT];
 #define GET_FREE_LIST_NUMBER(size) (MIN(log2_32(size), FREE_LIST_COUNT - 1))
 
@@ -509,7 +509,7 @@ void *mm_malloc(size_t size)
     if(prev) {
       SET_NEXT_FREE_BLOCK(prev, next);
     } else {
-      size_t power = GET_FREE_LIST_NUMBER(block);
+      size_t power = GET_FREE_LIST_NUMBER(GET_SIZE(block));
       assert(FREE_LIST[power] == block);
       FREE_LIST[power] = next;
     }
