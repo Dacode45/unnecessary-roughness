@@ -45,11 +45,6 @@ team_t team = {
  * Block macros
  *
  * void* previous
- * size_t size (union with 1 bit active)
- * (allocated data)
- *
- * My guess is we will eventually reorganize to:
- * void* previous
  * size_t size | free bit
  * (allocated data) | (void * next_of_same_size; void* prev_of_same_size)
  *
